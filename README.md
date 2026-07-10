@@ -14,3 +14,4 @@ Agentic AI 競賽專案 — 使用手機鏡頭 + 區域網路偵測 + AI 多模�
 | 案件地圖資料來源/知識庫 | (後端另建 repo?) | TBD |
 
 詳細架構見 `docs/ARCHITECTURE.md`
+開始前請先看main分支裡的git使用規範
