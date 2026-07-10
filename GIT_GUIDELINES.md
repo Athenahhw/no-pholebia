@@ -18,6 +18,7 @@ develop     ← 整合分支,所有 feature 合併到這裡先測試
   ├── feature/risk-assessment  (風險評估與引導)
   ├── feature/report-map       (GPS報案/地圖/自動化法務)
   └── feature/ui               (介面)
+以上舉例，可以參考
 ```
 
 ### 各分支角色
