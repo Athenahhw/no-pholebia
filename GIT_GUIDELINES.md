@@ -10,7 +10,7 @@
 ```
 main        ← 永遠是「可以上台展示」的穩定版本
   │
-develop     ← 整合分支,所有 feature 合併到這裡先測試
+develop     ← 整合分支,所有 feature 合併到這裡先測試，抓檔案從這裡抓
   │
   ├── feature/detection        (YOLO物理特徵/反光偵測 — 你)
   ├── feature/network-scan     (區域網路異常偵測)
