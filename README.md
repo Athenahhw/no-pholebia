@@ -3,7 +3,7 @@
 Agentic AI 競賽專案 — 使用手機鏡頭 + 區域網路偵測 + AI 多模態推理,
 判斷可疑物體(如藏有針孔攝影機的盒子)出現在特定場域是否合理。
 
-## 分工
+## 分工 https://docs.google.com/spreadsheets/d/11aaLYlLb2Qhr9XcGZi8ooJzOMi5sjpJhBM2vwVsZs4U/edit?usp=sharing
 | 模組 | 資料夾 | 負責人 |
 |---|---|---|
 | YOLO物理特徵/反光偵測 | lib/detection | Athenahhw |
