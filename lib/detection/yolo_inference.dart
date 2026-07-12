@@ -14,6 +14,7 @@ class YoloDetector {
     _interpreter = await Interpreter.fromAsset('assets/models/pinhole_yolo.tflite');
   }
 
+
   Future<double> classifyCandidate(img.Image cropped) async {
     // TODO: preprocess + run inference,回傳信心度 0~1
     return 0.0;
