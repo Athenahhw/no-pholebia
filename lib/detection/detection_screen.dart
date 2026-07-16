@@ -1,12 +1,7 @@
-// detection_screen.dart  (MVP 簡化版)
-// 負責人: 前端 - YOLO物理特徵/反光偵測 組
-//
-// 這版拿掉 YOLO(因為自訂類別模型還沒訓練完成,接上會直接 crash)。
-// 目標:先讓「相機開啟 → 手電筒控制 → 反光點偵測 → 畫面圈出來」
-// 這條最基本的路能動,之後 YOLO 模型訓練好了,把 _yoloDetector 那幾行
-// 取消註解接回去就好,其他架構不用大改。
+import 'dart:async';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'camera_service.dart';
 import 'detection_result.dart';
@@ -31,6 +26,12 @@ class _DetectionScreenState extends State<DetectionScreen> {
   bool _isProcessing = false;
   bool _isReady = false;
   String? _errorMessage;
+
+  // ---- 高風險提醒的閾值與冷卻控制 ----
+  static const double _flickerAlertThreshold = 8.0;
+  static const Duration _alertCooldown = Duration(seconds: 2);
+  DateTime? _lastAlertTime;
+  bool _justAlerted = false; // 給 UI 做短暫的視覺強調用
 
   @override
   void initState() {
@@ -62,15 +63,36 @@ class _DetectionScreenState extends State<DetectionScreen> {
     _glintTracker.addFrame(glintCandidates);
     final trackedGlints = _glintTracker.computeFlickerScores();
 
+    final currentGlints = trackedGlints.isNotEmpty ? trackedGlints : glintCandidates;
+
+    _maybeTriggerAlert(currentGlints);
+
     if (mounted) {
-      setState(() {
-        _glints = trackedGlints.isNotEmpty ? trackedGlints : glintCandidates;
+      setState(() => _glints = currentGlints);
+    }
+  }
+
+  /// 有高風險反光點,且已經過了冷卻時間,才觸發震動+音效
+  void _maybeTriggerAlert(List<GlintCandidate> glints) {
+    final hasHighRisk = glints.any((g) => (g.flickerScore ?? 0) > _flickerAlertThreshold);
+    if (!hasHighRisk) return;
+
+    final now = DateTime.now();
+    if (_lastAlertTime != null && now.difference(_lastAlertTime!) < _alertCooldown) {
+      return; // 還在冷卻時間內,不重複提醒
+    }
+    _lastAlertTime = now;
+
+    HapticFeedback.heavyImpact(); // 震動(iOS/Android都支援,不需要額外套件)
+    SystemSound.play(SystemSoundType.alert); // 系統提示音
+
+    if (mounted) {
+      setState(() => _justAlerted = true);
+      // 短暫顯示視覺強調後恢復
+      Timer(const Duration(milliseconds: 500), () {
+        if (mounted) setState(() => _justAlerted = false);
       });
     }
-
-    // ---- YOLO 之後接回這裡 ----
-    // final boxes = await _yoloDetector.detect(image);
-    // setState(() => _boxes = boxes);
   }
 
   @override
@@ -115,6 +137,17 @@ class _DetectionScreenState extends State<DetectionScreen> {
               ),
             ),
           ),
+          // 觸發警報瞬間,螢幕邊緣閃一下紅色外框,加強視覺提示
+          if (_justAlerted)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.redAccent, width: 8),
+                  ),
+                ),
+              ),
+            ),
           _buildTopBar(),
           _buildBottomStatusBar(),
         ],
@@ -150,7 +183,8 @@ class _DetectionScreenState extends State<DetectionScreen> {
   }
 
   Widget _buildBottomStatusBar() {
-    final suspiciousGlints = _glints.where((g) => (g.flickerScore ?? 0) > 8.0).length;
+    final suspiciousGlints =
+        _glints.where((g) => (g.flickerScore ?? 0) > _flickerAlertThreshold).length;
 
     return Positioned(
       left: 0,
@@ -161,11 +195,13 @@ class _DetectionScreenState extends State<DetectionScreen> {
           margin: const EdgeInsets.all(12),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.black54,
+            color: suspiciousGlints > 0 ? Colors.red.withValues(alpha: 0.55) : Colors.black54,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
-            '偵測到 ${_glints.length} 個反光點・$suspiciousGlints 個可疑閃爍',
+            suspiciousGlints > 0
+                ? '⚠️ 偵測到 $suspiciousGlints 個可疑反光點,建議仔細檢查'
+                : '偵測到 ${_glints.length} 個反光點・目前無明顯異常',
             style: const TextStyle(color: Colors.white, fontSize: 14),
           ),
         ),
@@ -174,7 +210,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
   }
 }
 
-/// 簡化版繪圖器,只畫反光點(拿掉 bounding_box_painter.dart 裡 YOLO 那半部)
+/// 簡化版繪圖器,只畫反光點
 class _GlintPainter extends CustomPainter {
   final List<GlintCandidate> glints;
   final Size imageSize;
