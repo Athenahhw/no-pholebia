@@ -6,7 +6,7 @@ Agentic AI 競賽專案 — 使用手機鏡頭 + 區域網路偵測 + AI 多模�
 ## 分工 https://docs.google.com/spreadsheets/d/11aaLYlLb2Qhr9XcGZi8ooJzOMi5sjpJhBM2vwVsZs4U/edit?usp=sharing
 | 模組 | 資料夾 | 負責人 |
 |---|---|---|
-| YOLO物理特徵/反光偵測 | lib/detection | Athenahhw |
+| 物理特徵/反光偵測 | lib/detection | Athenahhw |
 | 風險評估 | lib/risk | TBD |
 | GPS報案/地圖/法務 | lib/report | TBD |
 | 介面 | lib/ui | TBD |
