@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'detection/detection_screen.dart';
+import 'ui/splash_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -31,7 +32,8 @@ class MyApp extends StatelessWidget {
         // tested with just a hot reload.
         colorScheme: .fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const DetectionScreen(),
+      //home: const DetectionScreen(),
+      home: const SplashPage(),
     );
   }
 }
