@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'home_menu_screen.dart';
+import 'ui/splash_page.dart';
 
 void main() {
   runApp(const NoPholebiaApp());
@@ -7,7 +7,6 @@ void main() {
 
 class NoPholebiaApp extends StatelessWidget {
   const NoPholebiaApp({super.key});
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -17,7 +16,7 @@ class NoPholebiaApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueAccent),
         useMaterial3: true,
       ),
-      home: const HomeMenuScreen(),
+      home: const SplashPage(),
     );
   }
 }
