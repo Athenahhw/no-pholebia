@@ -26,13 +26,10 @@ class _DetectionScreenState extends State<DetectionScreen> {
   bool _isProcessing = false;
   bool _isReady = false;
   String? _errorMessage;
-
-  // ---- 高風險提醒的閾值與冷卻控制 ----
   static const double _flickerAlertThreshold = 8.0;
   static const Duration _alertCooldown = Duration(seconds: 2);
   DateTime? _lastAlertTime;
-  bool _justAlerted = false; // 給 UI 做短暫的視覺強調用
-
+  bool _justAlerted = false; 
   @override
   void initState() {
     super.initState();
@@ -42,6 +39,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
   Future<void> _setup() async {
     try {
       await _cameraService.initialize();
+      await _cameraService.setTorch(true); 
       await _cameraService.startImageStream(_onFrame);
       setState(() => _isReady = true);
     } catch (e) {
@@ -50,7 +48,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
   }
 
   void _onFrame(CameraImage cameraImage) {
-    if (_isProcessing) return; // 上一幀還沒處理完,跳過,避免堆積卡頓
+    if (_isProcessing) return; 
     _isProcessing = true;
     _processFrame(cameraImage).whenComplete(() => _isProcessing = false);
   }
@@ -72,23 +70,21 @@ class _DetectionScreenState extends State<DetectionScreen> {
     }
   }
 
-  /// 有高風險反光點,且已經過了冷卻時間,才觸發震動+音效
   void _maybeTriggerAlert(List<GlintCandidate> glints) {
     final hasHighRisk = glints.any((g) => (g.flickerScore ?? 0) > _flickerAlertThreshold);
     if (!hasHighRisk) return;
 
     final now = DateTime.now();
     if (_lastAlertTime != null && now.difference(_lastAlertTime!) < _alertCooldown) {
-      return; // 還在冷卻時間內,不重複提醒
+      return; 
     }
     _lastAlertTime = now;
 
-    HapticFeedback.heavyImpact(); // 震動(iOS/Android都支援,不需要額外套件)
+    HapticFeedback.heavyImpact(); 
     SystemSound.play(SystemSoundType.alert); // 系統提示音
 
     if (mounted) {
       setState(() => _justAlerted = true);
-      // 短暫顯示視覺強調後恢復
       Timer(const Duration(milliseconds: 500), () {
         if (mounted) setState(() => _justAlerted = false);
       });
@@ -137,7 +133,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
               ),
             ),
           ),
-          // 觸發警報瞬間,螢幕邊緣閃一下紅色外框,加強視覺提示
           if (_justAlerted)
             Positioned.fill(
               child: IgnorePointer(
@@ -210,7 +205,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
   }
 }
 
-/// 簡化版繪圖器,只畫反光點
 class _GlintPainter extends CustomPainter {
   final List<GlintCandidate> glints;
   final Size imageSize;
