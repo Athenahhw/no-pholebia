@@ -1,0 +1,122 @@
+[
+  {
+    "id": 1,
+    "title": "大稻埕公廁遭偷拍狼埋伏",
+    "location_name": "台北市大稻埕5號水門附近的一處流動廁所",
+    "latitude": 25.057183,
+    "longitude": 121.507888,
+    "start_date": "2024-01-01",
+    "end_date": "2024-01-01",
+    "category": "公廁/洗手間",
+    "source_type": "INIT",
+    "verified": true
+  },
+  {
+    "id": 2,
+    "title": "台鐵新左營站男廁遭裝針孔",
+    "location_name": "台鐵新左營站男廁",
+    "latitude": 22.687662,
+    "longitude": 120.306803,
+    "start_date": "2025-03-01",
+    "end_date": "2025-11-30",
+    "category": "公廁/洗手間",
+    "source_type": "INIT",
+    "verified": true
+  },
+  {
+    "id": 3,
+    "title": "民雄樂器行 針孔偷拍16人",
+    "location_name": "嘉義縣民雄鄉中樂村保生街63號",
+    "latitude": 23.553111,
+    "longitude": 120.428088,
+    "start_date": "2025-07-16",
+    "end_date": "2026-02-25",
+    "category": "店家/商業場所",
+    "source_type": "INIT",
+    "verified": true
+  },
+  {
+    "id": 4,
+    "title": "國北教大女廁針孔偷拍案",
+    "location_name": "國北教科學館3樓女廁",
+    "latitude": 25.023902,
+    "longitude": 121.545574,
+    "start_date": "2026-04-09",
+    "end_date": "2026-04-10",
+    "category": "公廁/洗手間",
+    "source_type": "INIT",
+    "verified": true
+  },
+  {
+    "id": 5,
+    "title": "國北教大女廁針孔偷拍案",
+    "location_name": "國北教篤行樓3樓女廁",
+    "latitude": 25.024093,
+    "longitude": 121.544437,
+    "start_date": "2026-04-12",
+    "end_date": "2026-04-13",
+    "category": "公廁/洗手間",
+    "source_type": "INIT",
+    "verified": true
+  },
+  {
+    "id": 6,
+    "title": "國北教大女廁針孔偷拍案",
+    "location_name": "國北教篤行樓4樓女廁",
+    "latitude": 25.024093,
+    "longitude": 121.544437,
+    "start_date": "2026-05-28",
+    "end_date": "2026-05-28",
+    "category": "公廁/洗手間",
+    "source_type": "INIT",
+    "verified": true
+  },
+  {
+    "id": 7,
+    "title": "北藝大女廁針孔偷拍案",
+    "location_name": "北藝大藝文生態館女廁",
+    "latitude": 25.132003,
+    "longitude": 121.466447,
+    "start_date": "2026-04-02",
+    "end_date": "2026-04-02",
+    "category": "公廁/洗手間",
+    "source_type": "INIT",
+    "verified": true
+  },
+  {
+    "id": 8,
+    "title": "北藝大女廁針孔偷拍案",
+    "location_name": "北藝大藝文生態館女廁",
+    "latitude": 25.132003,
+    "longitude": 121.466447,
+    "start_date": "2026-05-26",
+    "end_date": "2026-05-26",
+    "category": "公廁/洗手間",
+    "source_type": "INIT",
+    "verified": true
+  },
+  {
+    "id": 9,
+    "title": "北藝大女廁針孔偷拍案",
+    "location_name": "北藝大藝文生態館女廁",
+    "latitude": 25.132003,
+    "longitude": 121.466447,
+    "start_date": "2026-04-07",
+    "end_date": "2026-04-08",
+    "category": "公廁/洗手間",
+    "source_type": "INIT",
+    "verified": true
+  },
+  {
+    "id": 10,
+    "title": "警局廁所裝針孔還闖女同事家偷拍",
+    "location_name": "台北市警局信義分局1、2樓女廁",
+    "latitude": 25.03339,
+    "longitude": 121.567655,
+    "start_date": "2019-11-30",
+    "end_date": "2024-07-31",
+    "category": "公廁/洗手間",
+    "source_type": "INIT",
+    "verified": true
+  }
+]
