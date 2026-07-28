@@ -75,6 +75,7 @@ flutter:
     - assets/images/Loader.png
     - assets/images/Download.png
     - assets/images/Info.png
+    - assets/json/cases.json
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 
