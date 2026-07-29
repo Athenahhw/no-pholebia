@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'result_page.dart';
+import '../detection/scan_screen.dart';
+import '../detection/detection_result.dart';
 
 class ScanPage extends StatefulWidget {
   const ScanPage({super.key});
@@ -54,6 +56,51 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
     _environmentFocusNode.dispose(); // 👈 記得銷毀 FocusNode
     _animationController.dispose();
     super.dispose();
+  }
+
+  /// 把掃描結果轉換成 ResultPage 要的格式。
+  /// 優先用後端AI回傳的結果;後端還沒接上/連線失敗時,
+  /// 先用本機資料做一個簡單的保底判斷,讓整條流程demo時能跑得通。
+  (RiskLevel, int) _buildResultFrom(
+    DetectionSessionSummary summary,
+    Map<String, dynamic>? backendResult,
+  ) {
+    if (backendResult != null && backendResult['riskLevel'] != null) {
+      final level = backendResult['riskLevel'] == 'high' ? RiskLevel.high : RiskLevel.low;
+      final score = (backendResult['riskPercentage'] as num?)?.toInt() ?? 0;
+      return (level, score);
+    }
+
+    // 保底邏輯(後端未接上時使用):有可疑閃爍反光點或遠端YOLO抓到物件,就判定高風險
+    final hasRisk = summary.highRiskGlintCount > 0 || summary.boundingBoxes.isNotEmpty;
+    return (
+      hasRisk ? RiskLevel.high : RiskLevel.low,
+      hasRisk ? 70 : 5, // 暫定數字,等後端有真的分數再換掉
+    );
+  }
+
+  /// 進入相機掃描畫面,掃完後導到結果頁。
+  /// 中間logo按鈕跟底部「一鍵掃描」導覽按鈕共用這段邏輯。
+  void _startScan(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ScanScreen(
+          onScanComplete: (summary, backendResult) {
+            final result = _buildResultFrom(summary, backendResult);
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ResultPage(
+                  riskLevel: result.$1,
+                  score: result.$2,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   @override
@@ -112,7 +159,7 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
+                                  color: Colors.black.withValues(alpha: 0.05),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
@@ -177,8 +224,8 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
                                       border: Border.all(
-                                        color: const Color(0xFFFFFEC3).withOpacity(
-                                          (1.0 - _animationController.value).clamp(0.0, 1.0),
+                                        color: const Color(0xFFFFFEC3).withValues(
+                                          alpha: (1.0 - _animationController.value).clamp(0.0, 1.0),
                                         ),
                                         width: 1.5,
                                       ),
@@ -187,17 +234,7 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                                 },
                               ),
                               GestureDetector(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => const ResultPage(
-                                        riskLevel: RiskLevel.low,
-                                        score: 4,
-                                      ),
-                                    ),
-                                  );
-                                },
+                                onTap: () => _startScan(context),
                                 child: SizedBox(
                                   width: 260,
                                   height: 260,
@@ -248,7 +285,7 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                         color: const Color(0xFFF0EED3),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.12),
+                            color: Colors.black.withValues(alpha: 0.12),
                             blurRadius: 10,
                             offset: const Offset(0, -5),
                           ),
@@ -265,18 +302,21 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                           icon: 'assets/images/scan.png',
                           label: '一鍵掃描',
                           isSelected: true,
+                          onTap: () => _startScan(context),
                         ),
                         const SizedBox(width: 61.0),
                         _buildNavItem(
                           icon: 'assets/images/AI.png',
                           label: 'AI助理',
                           isSelected: false,
+                          onTap: null, // TODO: 等AI助理頁面做好再接上
                         ),
                         const SizedBox(width: 61.0),
                         _buildNavItem(
                           icon: 'assets/images/map.png',
                           label: '案件地圖',
                           isSelected: false,
+                          onTap: null, // TODO: 等案件地圖頁面做好再接上
                         ),
                       ],
                     ),
@@ -294,8 +334,11 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
     required String icon,
     required String label,
     required bool isSelected,
+    required VoidCallback? onTap,
   }) {
-    return Column(
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
@@ -307,7 +350,7 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
             boxShadow: isSelected
                 ? [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.18),
+                      color: Colors.black.withValues(alpha: 0.18),
                       blurRadius: 8,
                       offset: const Offset(0, -4),
                     ),
@@ -335,6 +378,7 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
           ),
         ),
       ],
+      ),
     );
   }
 }

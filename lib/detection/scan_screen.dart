@@ -1,12 +1,24 @@
+// ============================================================
+// scan_screen.dart
+// 負責人: 前端 - YOLO物理特徵/反光偵測 組
+//
+// 掃描主畫面:相機全螢幕 + 四角掃描框 + 移動掃描線 + "掃描中,請稍後"
+// 固定時間掃描(預設6秒)結束後,把累積的反光點資料整理成
+// DetectionSessionSummary,送給後端 AI,並透過 onScanComplete callback
+// 把結果交出去 —— 下一頁(低風險/高風險結果頁)不是這個模組的工作,
+// 由拿到 callback 結果的人(你或介面組隊友)決定要導去哪個畫面。
+// ============================================================
 import 'dart:async';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 
 import 'camera_service.dart';
 import 'detection_backend_client.dart';
 import 'detection_result.dart';
 import 'glint_detector.dart';
 import 'image_converter.dart';
+//import 'remote_yolo_client.dart';
 
 /// 掃描完成後的回呼:summary 是本機偵測到的原始資料,
 /// backendResult 是送給後端 AI 分析後拿到的結果(可能是 null,代表連線失敗)。
@@ -42,18 +54,25 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
   final GlintDetector _glintDetector = GlintDetector();
   final GlintTracker _glintTracker = GlintTracker();
   final DetectionBackendClient _backendClient = DetectionBackendClient();
+  //final RemoteYoloClient _remoteYoloClient = RemoteYoloClient();
 
   late final AnimationController _scanLineController;
 
   bool _isProcessing = false;
   bool _isReady = false;
-  bool _isFinishing = false; // 掃描時間到,正在整理資料送後端
+  bool _isFinishing = false;
   String? _errorMessage;
 
   double? _ambientBrightnessAtStart;
   bool _hasSampledBrightness = false;
   DateTime? _scanStartedAt;
   Timer? _scanTimer;
+  Timer? _remoteYoloTimer;
+
+  img.Image? _latestImage; // 給遠端YOLO呼叫用的最新一幀
+  final List<BoundingBox> _remoteBoxes = [];
+  bool _remoteYoloReached = false;
+  bool _remoteYoloCallInFlight = false;
 
   @override
   void initState() {
@@ -76,6 +95,10 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
       _scanStartedAt = DateTime.now();
       // 掃描時間到,自動結束
       _scanTimer = Timer(widget.scanDuration, _finishScan);
+      // TODO: YOLO物件偵測先暫停,之後接回去時把下面這段取消註解就好
+      // _remoteYoloTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
+      //   _tryRemoteYoloDetect();
+      // });
     } catch (e) {
       setState(() => _errorMessage = '初始化失敗: $e');
     }
@@ -107,12 +130,31 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
 
     final glintCandidates = _glintDetector.detect(image);
     _glintTracker.addFrame(glintCandidates);
+    _latestImage = image; // 存起來給遠端YOLO呼叫用,避免重複轉換影像格式
+  }
+
+  /// 嘗試把目前最新一幀送給遠端YOLO伺服器做物件偵測。
+  /// 用 in-flight 旗標避免同時發出多個請求疊加;連線失敗就靜默跳過,
+  /// 不影響本機反光偵測繼續運作。
+  Future<void> _tryRemoteYoloDetect() async {
+    if (_remoteYoloCallInFlight || _latestImage == null || _isFinishing) return;
+    _remoteYoloCallInFlight = true;
+
+    final jpegBytes = img.encodeJpg(_latestImage!, quality: 80);
+    final boxes = await _remoteYoloClient.detect(jpegBytes);
+
+    if (boxes != null) {
+      _remoteYoloReached = true;
+      _remoteBoxes.addAll(boxes);
+    }
+    _remoteYoloCallInFlight = false;
   }
 
   Future<void> _finishScan() async {
     if (_isFinishing) return;
     setState(() => _isFinishing = true);
 
+    _remoteYoloTimer?.cancel();
     await _cameraService.stopImageStream();
 
     // 掃描時間短,幀數可能不多,minFrames 放寬一點,避免全部被濾掉
@@ -122,10 +164,12 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
 
     final summary = DetectionSessionSummary(
       glints: trackedGlints,
+      boundingBoxes: _remoteBoxes,
       totalGlintCount: trackedGlints.length,
       highRiskGlintCount: highRiskCount,
       ambientBrightnessAtStart: _ambientBrightnessAtStart ?? 0,
       torchUsedDuringScan: _cameraService.isTorchOn,
+      remoteYoloAvailable: _remoteYoloReached,
       scanStartedAt: _scanStartedAt ?? DateTime.now(),
       scanEndedAt: DateTime.now(),
     );
@@ -151,6 +195,7 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
   @override
   void dispose() {
     _scanTimer?.cancel();
+    _remoteYoloTimer?.cancel();
     _scanLineController.dispose();
     _cameraService.dispose();
     super.dispose();
@@ -348,6 +393,8 @@ class _DebugResultScreen extends StatelessWidget {
           children: [
             Text('反光點總數: ${summary.totalGlintCount}'),
             Text('高風險反光點: ${summary.highRiskGlintCount}'),
+            Text('遠端YOLO是否連線成功: ${summary.remoteYoloAvailable}'),
+            Text('遠端YOLO偵測到的物件數: ${summary.boundingBoxes.length}'),
             Text('掃描時開始環境亮度: ${summary.ambientBrightnessAtStart.toStringAsFixed(1)}'),
             Text('是否有開手電筒: ${summary.torchUsedDuringScan}'),
             const Divider(height: 32),
