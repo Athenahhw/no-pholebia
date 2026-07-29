@@ -141,13 +141,13 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
     _remoteYoloCallInFlight = true;
 
     final jpegBytes = img.encodeJpg(_latestImage!, quality: 80);
-    final boxes = await _remoteYoloClient.detect(jpegBytes);
+    //final boxes = await _remoteYoloClient.detect(jpegBytes);
 
-    if (boxes != null) {
+    /*if (boxes != null) {
       _remoteYoloReached = true;
       _remoteBoxes.addAll(boxes);
     }
-    _remoteYoloCallInFlight = false;
+    _remoteYoloCallInFlight = false;*/
   }
 
   Future<void> _finishScan() async {
