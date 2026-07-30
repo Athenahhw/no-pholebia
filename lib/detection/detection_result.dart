@@ -1,19 +1,17 @@
-// ============================================================
-// detection_result.dart
-// 定義偵測結果的資料結構
+// 定義偵測結果的資料結構 —— 這份的 toJson() 就是要送給後端的 JSON 格式。
 //
-// 註: 遠端物件偵測改用 YOLO-World(開放詞彙偵測),類別不是寫死的
-// 固定列舉,而是由後端伺服器端的文字提示清單(prompt list)動態決定,
-// 例如 ["hook", "tissue box", "electrical outlet", "vent", "trash can"]。
-// 所以這裡 objectClass 直接用 String,不用 enum ——未來後端要新增/
-// 調整偵測類別,只要改他們那邊的提示清單,前端完全不用改程式碼。
-// ============================================================
+// 註: 物件偵測改用 Google ML Kit,在地端(手機本身)運算,不需要
+// 另外架伺服器。ML Kit 給的是粗略分類(家用品/食物/植物/其他),
+// 不是精準的"掛鉤"、"面紙盒"這種細分類別,這是刻意的設計 ——
+// 精準的語意判斷("這個東西出現在這裡合理嗎")交給後端的多模態LLM
+// 去做,前端只負責"框出候選位置"這個較簡單的任務。
+
 
 /// 單一 bounding box,座標為 0~1 正規化比例,方便配合任意畫面尺寸繪製
 class BoundingBox {
   final double x, y, width, height;
   final double confidence;
-  final String objectClass; // 例如 "hook"、"tissue box"、"electrical outlet"
+  final String objectClass; // ML Kit 給的粗略分類,例如 "Home good"、"unknown"
 
   BoundingBox({
     required this.x,
@@ -68,10 +66,10 @@ class GlintCandidate {
       };
 }
 
-/// 一次完整掃描的彙整結果,送給後端 AI 的資料格式。
-/// 結合兩種來源:
-///   - glints: 本機(手機端)反光偵測的結果
-///   - boundingBoxes: 遠端(YOLO-World 伺服器)物件偵測的結果
+/// 一次完整掃描的彙整結果 —— 這就是工作二要的 .json,toJson() 直接輸出
+/// 給後端的資料格式。結合兩種來源:
+///   - glints: 本機反光偵測的結果
+///   - boundingBoxes: 本機 ML Kit 物件偵測的結果(候選位置,語意判斷交給後端)
 class DetectionSessionSummary {
   final List<GlintCandidate> glints;
   final List<BoundingBox> boundingBoxes;
@@ -80,6 +78,8 @@ class DetectionSessionSummary {
   final double ambientBrightnessAtStart;
   final bool torchUsedDuringScan;
   final bool remoteYoloAvailable;
+  final String? environmentContext;
+  final String? screenshotBase64; // 掃描畫面截圖(JPEG, base64編碼),給後端LLM做多模態判斷用
   final DateTime scanStartedAt;
   final DateTime scanEndedAt;
 
@@ -91,6 +91,8 @@ class DetectionSessionSummary {
     required this.ambientBrightnessAtStart,
     required this.torchUsedDuringScan,
     this.remoteYoloAvailable = false,
+    this.environmentContext,
+    this.screenshotBase64,
     required this.scanStartedAt,
     required this.scanEndedAt,
   });
@@ -103,6 +105,8 @@ class DetectionSessionSummary {
         'ambientBrightnessAtStart': ambientBrightnessAtStart,
         'torchUsedDuringScan': torchUsedDuringScan,
         'remoteYoloAvailable': remoteYoloAvailable,
+        'environmentContext': environmentContext,
+        'screenshotBase64': screenshotBase64,
         'scanStartedAt': scanStartedAt.toIso8601String(),
         'scanEndedAt': scanEndedAt.toIso8601String(),
         'scanDurationMs': scanEndedAt.difference(scanStartedAt).inMilliseconds,

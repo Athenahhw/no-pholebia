@@ -1,14 +1,13 @@
-// ============================================================
-// scan_screen.dart
-// 負責人: 前端 - YOLO物理特徵/反光偵測 組
-//
 // 掃描主畫面:相機全螢幕 + 四角掃描框 + 移動掃描線 + "掃描中,請稍後"
-// 固定時間掃描(預設6秒)結束後,把累積的反光點資料整理成
+// 固定時間掃描(預設6秒)結束後,把累積的反光點+物件偵測資料整理成
 // DetectionSessionSummary,送給後端 AI,並透過 onScanComplete callback
 // 把結果交出去 —— 下一頁(低風險/高風險結果頁)不是這個模組的工作,
 // 由拿到 callback 結果的人(你或介面組隊友)決定要導去哪個畫面。
-// ============================================================
+//
+// 物件偵測改用 Google ML Kit(在地端運算,不需要伺服器/網路),
+// 取代原本需要另外架設的YOLO遠端伺服器方案。
 import 'dart:async';
+import 'dart:convert';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
@@ -18,7 +17,7 @@ import 'detection_backend_client.dart';
 import 'detection_result.dart';
 import 'glint_detector.dart';
 import 'image_converter.dart';
-//import 'remote_yolo_client.dart';
+import 'object_detector_service.dart';
 
 /// 掃描完成後的回呼:summary 是本機偵測到的原始資料,
 /// backendResult 是送給後端 AI 分析後拿到的結果(可能是 null,代表連線失敗)。
@@ -38,11 +37,16 @@ class ScanScreen extends StatefulWidget {
   /// 環境亮度低於這個值就自動開手電筒(0~255,數字越小代表環境越暗)
   final double autoTorchBrightnessThreshold;
 
+  /// 使用者在首頁輸入的所在環境(例如"廁所"),會一併送給後端AI
+  /// 幫助判斷「這個物件出現在這裡合不合理」
+  final String? environmentContext;
+
   const ScanScreen({
     super.key,
     this.scanDuration = const Duration(seconds: 6),
     this.onScanComplete,
     this.autoTorchBrightnessThreshold = 90,
+    this.environmentContext,
   });
 
   @override
@@ -54,7 +58,7 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
   final GlintDetector _glintDetector = GlintDetector();
   final GlintTracker _glintTracker = GlintTracker();
   final DetectionBackendClient _backendClient = DetectionBackendClient();
-  //final RemoteYoloClient _remoteYoloClient = RemoteYoloClient();
+  final ObjectDetectorService _objectDetectorService = ObjectDetectorService();
 
   late final AnimationController _scanLineController;
 
@@ -67,12 +71,12 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
   bool _hasSampledBrightness = false;
   DateTime? _scanStartedAt;
   Timer? _scanTimer;
-  Timer? _remoteYoloTimer;
+  Timer? _objectDetectTimer;
 
-  img.Image? _latestImage; // 給遠端YOLO呼叫用的最新一幀
-  final List<BoundingBox> _remoteBoxes = [];
-  bool _remoteYoloReached = false;
-  bool _remoteYoloCallInFlight = false;
+  img.Image? _latestImage; // 給物件偵測用的最新一幀
+  final List<BoundingBox> _detectedBoxes = [];
+  bool _objectDetectionRan = false; // 本次掃描期間物件偵測是否至少成功跑過一次
+  bool _objectDetectCallInFlight = false;
 
   @override
   void initState() {
@@ -95,10 +99,10 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
       _scanStartedAt = DateTime.now();
       // 掃描時間到,自動結束
       _scanTimer = Timer(widget.scanDuration, _finishScan);
-      // TODO: YOLO物件偵測先暫停,之後接回去時把下面這段取消註解就好
-      // _remoteYoloTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
-      //   _tryRemoteYoloDetect();
-      // });
+      // 每 1.5 秒在地端跑一次物件偵測(ML Kit 在裝置上運算,不需要網路)
+      _objectDetectTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
+        _tryLocalObjectDetect();
+      });
     } catch (e) {
       setState(() => _errorMessage = '初始化失敗: $e');
     }
@@ -130,31 +134,42 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
 
     final glintCandidates = _glintDetector.detect(image);
     _glintTracker.addFrame(glintCandidates);
-    _latestImage = image; // 存起來給遠端YOLO呼叫用,避免重複轉換影像格式
+    _latestImage = image; // 存起來給物件偵測用,避免重複轉換影像格式
   }
 
-  /// 嘗試把目前最新一幀送給遠端YOLO伺服器做物件偵測。
-  /// 用 in-flight 旗標避免同時發出多個請求疊加;連線失敗就靜默跳過,
+  /// 嘗試對目前最新一幀做一次在地端物件偵測(ML Kit)。
+  /// 用 in-flight 旗標避免同時發出多次呼叫疊加;偵測失敗就靜默跳過,
   /// 不影響本機反光偵測繼續運作。
-  Future<void> _tryRemoteYoloDetect() async {
-    if (_remoteYoloCallInFlight || _latestImage == null || _isFinishing) return;
-    _remoteYoloCallInFlight = true;
+  Future<void> _tryLocalObjectDetect() async {
+    if (_objectDetectCallInFlight || _latestImage == null || _isFinishing) return;
+    _objectDetectCallInFlight = true;
 
-    final jpegBytes = img.encodeJpg(_latestImage!, quality: 80);
-    //final boxes = await _remoteYoloClient.detect(jpegBytes);
+    TempImageFile? tempFile;
+    try {
+      final jpegBytes = img.encodeJpg(_latestImage!, quality: 80);
+      tempFile = await writeTempJpeg(jpegBytes);
 
-    /*if (boxes != null) {
-      _remoteYoloReached = true;
-      _remoteBoxes.addAll(boxes);
+      final boxes = await _objectDetectorService.detectFromFile(
+        tempFile.file.path,
+        _latestImage!.width,
+        _latestImage!.height,
+      );
+
+      _objectDetectionRan = true;
+      _detectedBoxes.addAll(boxes);
+    } catch (e) {
+      // ML Kit 偵測失敗(例如裝置不支援),靜默跳過,反光偵測照常運作
+    } finally {
+      await tempFile?.cleanup();
+      _objectDetectCallInFlight = false;
     }
-    _remoteYoloCallInFlight = false;*/
   }
 
   Future<void> _finishScan() async {
     if (_isFinishing) return;
     setState(() => _isFinishing = true);
 
-    _remoteYoloTimer?.cancel();
+    _objectDetectTimer?.cancel();
     await _cameraService.stopImageStream();
 
     // 掃描時間短,幀數可能不多,minFrames 放寬一點,避免全部被濾掉
@@ -162,14 +177,24 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
     final highRiskCount =
         trackedGlints.where((g) => (g.flickerScore ?? 0) > 8.0).length;
 
+    // 把最後一幀畫面編碼成 base64,給後端多模態LLM直接看圖判斷用。
+    // 壓縮品質調低一點(60)避免JSON太肥大,座標數字不受影響,只影響給LLM看的畫質。
+    String? screenshotBase64;
+    if (_latestImage != null) {
+      final jpegBytes = img.encodeJpg(_latestImage!, quality: 60);
+      screenshotBase64 = base64Encode(jpegBytes);
+    }
+
     final summary = DetectionSessionSummary(
       glints: trackedGlints,
-      boundingBoxes: _remoteBoxes,
+      boundingBoxes: _detectedBoxes,
       totalGlintCount: trackedGlints.length,
       highRiskGlintCount: highRiskCount,
       ambientBrightnessAtStart: _ambientBrightnessAtStart ?? 0,
       torchUsedDuringScan: _cameraService.isTorchOn,
-      remoteYoloAvailable: _remoteYoloReached,
+      remoteYoloAvailable: _objectDetectionRan,
+      environmentContext: widget.environmentContext,
+      screenshotBase64: screenshotBase64,
       scanStartedAt: _scanStartedAt ?? DateTime.now(),
       scanEndedAt: DateTime.now(),
     );
@@ -195,9 +220,10 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
   @override
   void dispose() {
     _scanTimer?.cancel();
-    _remoteYoloTimer?.cancel();
+    _objectDetectTimer?.cancel();
     _scanLineController.dispose();
     _cameraService.dispose();
+    _objectDetectorService.dispose();
     super.dispose();
   }
 
@@ -393,8 +419,9 @@ class _DebugResultScreen extends StatelessWidget {
           children: [
             Text('反光點總數: ${summary.totalGlintCount}'),
             Text('高風險反光點: ${summary.highRiskGlintCount}'),
-            Text('遠端YOLO是否連線成功: ${summary.remoteYoloAvailable}'),
-            Text('遠端YOLO偵測到的物件數: ${summary.boundingBoxes.length}'),
+            Text('物件偵測是否有成功執行: ${summary.remoteYoloAvailable}'),
+            Text('偵測到的候選物件數: ${summary.boundingBoxes.length}'),
+            Text('是否有附上截圖: ${summary.screenshotBase64 != null}'),
             Text('掃描時開始環境亮度: ${summary.ambientBrightnessAtStart.toStringAsFixed(1)}'),
             Text('是否有開手電筒: ${summary.torchUsedDuringScan}'),
             const Divider(height: 32),

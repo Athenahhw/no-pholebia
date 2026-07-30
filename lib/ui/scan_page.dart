@@ -86,6 +86,9 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
       context,
       MaterialPageRoute(
         builder: (context) => ScanScreen(
+          environmentContext: _environmentController.text.trim().isEmpty
+              ? null
+              : _environmentController.text.trim(),
           onScanComplete: (summary, backendResult) {
             final result = _buildResultFrom(summary, backendResult);
             Navigator.pushReplacement(

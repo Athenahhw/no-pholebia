@@ -11,7 +11,7 @@ class SplashPage extends StatefulWidget {
 class _SplashPageState extends State<SplashPage> {
   @override
   void initState() {
-    super.initState(); // 👈 已修正為正確的 super.initState()
+    super.initState();
     
     // 延遲 2 秒後自動跳轉到 ScanPage
     Future.delayed(const Duration(seconds: 2), () {
