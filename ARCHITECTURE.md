@@ -1,4 +1,6 @@
-# 針孔攝影機偵測 App — 架構文件
+# No Pholebia(不再孔怖)— 架構文件
+
+> 最後更新: 2026/08/02 — 已確認換組別(不再受限AMD資源要求),物件偵測改用地端ML Kit
 
 ## 1. 專案目標
 
@@ -6,7 +8,12 @@
 是否存在偽裝針孔攝影機。核心不是單純一次性辨識,而是讓 AI 代理人**自主規劃驗證步驟**:
 發現可疑物 → 判斷信心度不足 → 自主決定下一步(換角度、換位置、查網路異常)→ 綜合多方證據下結論。
 
-## 2. 系統整體架構圖
+## 2. 比賽組別
+
+已確認改參加「資訊應用組」(或同類不綁定特定廠商硬體的組別),**不再受限於必須使用
+AMD相關資源的規定**。技術方向不變,只是不用再為了滿足硬體要求綁死架構,開發彈性變高。
+
+## 3. 系統整體架構圖
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -20,86 +27,70 @@
    ┌────────────┼────────────┐    ┌───────┼──────────────┐
    │            │            │    │       │              │
 ┌──▼───┐   ┌────▼────┐  ┌────▼──┐┌▼───────▼──┐  ┌────────▼───────┐
-│YOLO物理│  │風險評估  │  │GPS報案 ││多模態推理  │  │案件地圖資料庫/  │
-│反光偵測│  │(權重判定)│  │地圖照片││語義推理    │  │知識庫          │
+│反光偵測 │  │風險評估  │  │GPS報案 ││多模態推理  │  │案件地圖資料庫/  │
+│物件偵測 │  │(權重判定)│  │地圖照片││語義推理    │  │知識庫          │
 │★你負責│  │          │  │介面   ││(LLM整合)  │  │               │
 └──┬───┘   └─────────┘  └───────┘└───────────┘  └───────────────┘
    │
-   └─► 輸出 DetectionResult → 傳給後端 Agent 做多模態交叉推理
+   └─► 輸出 DetectionSessionSummary(含截圖) → 傳給後端做多模態推理
 ```
 
-## 3. 三大功能主軸(對照白板)
-
-### 3.1 多模態交叉推理
-- 紅外線反光與物理特徵(前端 - 你負責的部分)
-- 區域網路異常(區網掃描,偵測可疑裝置)
-- LLM 推理分析(綜合前兩者證據做最終判斷)
-
-### 3.2 主動式風險評估與引導
-- AI 依權重判定風險機率(結合 glintScore + yoloScore + 網路異常分數)
-- 提醒/遮蔽可疑物,引導使用者下一步動作(移動手機、換角度重新掃描)
-
-### 3.3 自動化法務
-- GPS 尋找附近派出所
-- 動態生成檢舉信函
-- 協助撰寫報案敘述
-
-## 4. 你負責的模組: YOLO 物理特徵/反光偵測 (`lib/detection/`)
+## 4. 反光偵測 + 地端物件偵測 (`lib/detection/`)
 
 ### 4.1 職責邊界
 輸入:相機即時影格(camera stream)
-輸出:`DetectionResult` 物件(候選點座標 + 反光分數 + YOLO信心度),往上交給
-Agent 層(多模態推理)做最終判斷。**這個模組不負責下結論,只負責證據蒐集與初步評分。**
+輸出:一次完整掃描結束後,整理成 `DetectionSessionSummary` 物件,POST 給後端。
+**這個模組不負責下結論(不判斷"這合不合理"),只負責蒐證:框出候選位置、量測反光異常、
+附上截圖,語意判斷交給後端多模態 LLM。**
 
 ### 4.2 內部流程
 
 ```
-相機影格
+使用者點「一鍵掃描」
   │
   ▼
-GlintDetector.detect()
-  → 找出所有超過亮度門檻的候選亮點(blob detection)
+ScanScreen 開啟相機,量測環境亮度 → 太暗自動開手電筒
   │
   ▼
-裁切候選點周圍區域(ROI crop)
+掃描期間(固定6秒)同時進行兩件事:
+  ├─ 每一幀: GlintDetector.detect() 找反光候選點
+  │           → GlintTracker 追蹤同一亮點的閃爍模式(晃動手機時的亮度變化)
+  │           → 閃爍分數高代表較可能是鏡頭的方向性反光,非一般反光物
+  │
+  └─ 每1.5秒: ObjectDetectorService(Google ML Kit)在地端偵測候選物件位置
+              → 只框位置+粗略分類,不追求精準辨識
   │
   ▼
-YoloDetector.classifyCandidate()
-  → 用微調過的 YOLOv8n(.tflite)判斷該區域外觀是否像鏡頭/針孔
+6秒後自動結束掃描,整理成 DetectionSessionSummary:
+  - glints(反光點清單+閃爍分數)
+  - boundingBoxes(候選物件位置,ML Kit給的粗略分類)
+  - environmentContext(使用者輸入的所在環境文字,例如"廁所")
+  - screenshotBase64(最後一幀畫面,JPEG base64編碼,給後端LLM看圖判斷)
+  - 其他中繼資料(環境亮度、手電筒狀態、掃描時間)
   │
   ▼
-(可選)多幀追蹤: 使用者微幅晃動手機,追蹤同一亮點的閃爍模式
-  → 針孔鏡頭反光具方向性,一般反光物較穩定,可作為額外特徵
+POST 給後端 AI(DetectionBackendClient.submitScan)
   │
   ▼
-組成 DetectionResult { x, y, glintScore, yoloScore, timestamp }
-  → 送往後端 Agent 做多模態交叉推理
+後端回傳風險評估結果 → onScanComplete callback → 導到結果頁(隊友的ResultPage)
 ```
 
 ### 4.3 檔案清單
+
 | 檔案 | 說明 |
 |---|---|
-| `glint_detector.dart` | 亮點/反光候選偵測(影像處理,flood-fill blob detection) |
-| `yolo_inference.dart` | 載入 `.tflite` 模型,對候選區域做分類推論 |
-| `detection_result.dart` | 定義輸出資料結構,與後端溝通的合約(contract) |
+| `camera_service.dart` | 相機初始化、手電筒控制、開燈/不開燈差異拍照 |
+| `image_converter.dart` | CameraImage(YUV420) 轉 img.Image |
+| `glint_detector.dart` | 反光點偵測(flood-fill blob detection)+ 環境亮度量測 + `GlintTracker`(多幀閃爍追蹤) |
+| `object_detector_service.dart` | 地端物件偵測(Google ML Kit),框出候選位置 |
+| `detection_result.dart` | 資料結構定義,`DetectionSessionSummary.toJson()` 就是給後端的JSON格式 |
+| `detection_backend_client.dart` | 把掃描結果 POST 給後端 API,取得風險評估回應 |
+| `scan_screen.dart` | 掃描主畫面,整合以上所有邏輯,四角掃描框+黃線動畫+震動音效提醒 |
 
-### 4.4 待辦(下一步)
-1. 準備/標註訓練資料集(針孔攝影機、螺絲孔、煙霧偵測器孔等易混淆樣本)
-2. 微調 YOLOv8n,匯出成 `.tflite` 放入 `assets/models/`
-3. 實作 `glint_detector.dart` 的 flood-fill 演算法
-4. 與後端(多模態推理組)對齊 `DetectionResult` 的 JSON 格式,確保介接順暢
+## 5. 前後端資料合約
 
-## 5. 前後端資料合約(初版,待與後端組確認)
-
-```json
-{
-  "x": 120,
-  "y": 340,
-  "glintScore": 0.82,
-  "yoloScore": 0.65,
-  "timestamp": "2026-07-10T16:09:00+08:00"
-}
-```
+`DetectionSessionSummary.toJson()` 的完整格式與欄位說明,見 `BACKEND_DATA_FORMAT.md`
+與範例檔 `example_detection_summary.json`。已提供給後端隊友作為 prompt 設計參考。
 
 ## 6. 技術棧總覽
 
@@ -107,15 +98,21 @@ YoloDetector.classifyCandidate()
 |---|---|
 | App框架 | Flutter (Dart) |
 | 相機控制 | `camera` package |
-| 本地推論 | `tflite_flutter` (YOLOv8n) |
+| 地端物件偵測 | `google_mlkit_object_detection`(裝置端運算,不需伺服器) |
 | 影像處理 | `image` package |
-| 雲端LLM | AMD 提供之雲端 LLM 資源(決賽指定) |
-| 狀態管理 | `provider` |
 | 網路請求 | `http` |
+| 後端溝通 | REST API(JSON,含base64截圖) |
 
-## 7. 開放問題(留給團隊討論)
+## 7. 純軟體策略(不外接硬體,與硬體資源需求脫鉤)
 
-- 是否外接 IR LED 硬體?純軟體偵測紅外線反光在多數手機(有IR-cut濾鏡)上效果有限,
-  需要團隊決定是否在比賽規則允許下攜帶簡易硬體上場。
-- 前後端資料傳輸方式:REST API? 還是前端直接呼叫雲端 LLM,後端只做知識庫查詢?
-- 多幀追蹤(晃動偵測)是否放入 MVP,或留到後期優化。
+反光偵測完全不依賴外部光源或特殊硬體:
+
+1. **多幀晃動追蹤是核心機制**:沒有外接光源時,單張影像的亮點很難跟一般反光物
+   (釘子、金屬件、油漆反光)區分。靠使用者晃動手機時同一亮點的閃爍模式判斷,
+   是低成本且有效的區分特徵。
+2. **善用手機既有光源**:自動判斷環境亮度,太暗自動開手電筒輔助反光偵測。
+3. **物件偵測不追求精準分類,交給後端做語意判斷**:地端 ML Kit 只需要框出候選位置,
+   真正「這是什麼、合不合理」的判斷交給後端多模態 LLM 看截圖判斷,前端不需要
+   自己訓練/微調模型,大幅降低開發複雜度與硬體依賴。
+4. **誠實呈現信心度,不過度宣稱**:Demo敘事重點放在「Agent如何用有限證據做多步驟
+   推理與引導使用者驗證」,而非宣稱能取代專業偵測設備。
