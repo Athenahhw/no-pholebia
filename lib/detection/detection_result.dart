@@ -1,5 +1,3 @@
-// 定義偵測結果的資料結構 —— 這份的 toJson() 就是要送給後端的 JSON 格式。
-//
 // 註: 物件偵測改用 Google ML Kit,在地端(手機本身)運算,不需要
 // 另外架伺服器。ML Kit 給的是粗略分類(家用品/食物/植物/其他),
 // 不是精準的"掛鉤"、"面紙盒"這種細分類別,這是刻意的設計 ——
@@ -43,6 +41,47 @@ class BoundingBox {
       };
 }
 
+/// 藍牙掃描偵測到的裝置(來自 bluetooth_scan_service)
+class BluetoothDeviceInfo {
+  final String name;
+  final String deviceId;
+  final int rssi; // 訊號強度,數字越接近0代表越近
+  final bool suspicious; // 裝置名稱是否命中可疑關鍵字
+
+  BluetoothDeviceInfo({
+    required this.name,
+    required this.deviceId,
+    required this.rssi,
+    required this.suspicious,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'deviceId': deviceId,
+        'rssi': rssi,
+        'suspicious': suspicious,
+      };
+}
+
+/// 區域網路掃描偵測到的裝置(來自 network_scan_service)
+class NetworkDevice {
+  final String ip;
+  final List<int> openPorts;
+  final bool looksLikeCamera;
+
+  NetworkDevice({
+    required this.ip,
+    required this.openPorts,
+    required this.looksLikeCamera,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'ip': ip,
+        'openPorts': openPorts,
+        'looksLikeCamera': looksLikeCamera,
+      };
+}
+
 /// 反光候選點(來自 glint_detector,本機運算)
 class GlintCandidate {
   final int x, y, radius;
@@ -80,6 +119,8 @@ class DetectionSessionSummary {
   final bool remoteYoloAvailable;
   final String? environmentContext;
   final String? screenshotBase64; // 掃描畫面截圖(JPEG, base64編碼),給後端LLM做多模態判斷用
+  final List<NetworkDevice> networkDevices; // 同網段偵測到的可疑裝置(輔助佐證,非決定性)
+  final List<BluetoothDeviceInfo> bluetoothDevices; // 附近藍牙裝置(輔助佐證,非決定性)
   final DateTime scanStartedAt;
   final DateTime scanEndedAt;
 
@@ -93,6 +134,8 @@ class DetectionSessionSummary {
     this.remoteYoloAvailable = false,
     this.environmentContext,
     this.screenshotBase64,
+    this.networkDevices = const [],
+    this.bluetoothDevices = const [],
     required this.scanStartedAt,
     required this.scanEndedAt,
   });
@@ -107,6 +150,8 @@ class DetectionSessionSummary {
         'remoteYoloAvailable': remoteYoloAvailable,
         'environmentContext': environmentContext,
         'screenshotBase64': screenshotBase64,
+        'networkDevices': networkDevices.map((d) => d.toJson()).toList(),
+        'bluetoothDevices': bluetoothDevices.map((d) => d.toJson()).toList(),
         'scanStartedAt': scanStartedAt.toIso8601String(),
         'scanEndedAt': scanEndedAt.toIso8601String(),
         'scanDurationMs': scanEndedAt.difference(scanStartedAt).inMilliseconds,

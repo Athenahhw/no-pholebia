@@ -18,6 +18,8 @@ import 'detection_result.dart';
 import 'glint_detector.dart';
 import 'image_converter.dart';
 import 'object_detector_service.dart';
+import 'network_scan_service.dart';
+import 'bluetooth_scan_service.dart';
 
 /// 掃描完成後的回呼:summary 是本機偵測到的原始資料,
 /// backendResult 是送給後端 AI 分析後拿到的結果(可能是 null,代表連線失敗)。
@@ -59,6 +61,8 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
   final GlintTracker _glintTracker = GlintTracker();
   final DetectionBackendClient _backendClient = DetectionBackendClient();
   final ObjectDetectorService _objectDetectorService = ObjectDetectorService();
+  final NetworkScanService _networkScanService = NetworkScanService();
+  final BluetoothScanService _bluetoothScanService = BluetoothScanService();
 
   late final AnimationController _scanLineController;
 
@@ -75,6 +79,8 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
 
   img.Image? _latestImage; // 給物件偵測用的最新一幀
   final List<BoundingBox> _detectedBoxes = [];
+  Future<List<NetworkDevice>>? _networkScanFuture; // 背景執行,掃描結束時才等待結果
+  Future<List<BluetoothDeviceInfo>>? _bluetoothScanFuture;
   bool _objectDetectionRan = false; // 本次掃描期間物件偵測是否至少成功跑過一次
   bool _objectDetectCallInFlight = false;
 
@@ -103,6 +109,13 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
       _objectDetectTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
         _tryLocalObjectDetect();
       });
+      // 網路掃描跟相機偵測平行進行,不互相等待,掃描結束時才收成果
+      _networkScanFuture = _networkScanService.scan(
+        timeout: const Duration(seconds: 4),
+      );
+      _bluetoothScanFuture = _bluetoothScanService.scan(
+        timeout: const Duration(seconds: 4),
+      );
     } catch (e) {
       setState(() => _errorMessage = '初始化失敗: $e');
     }
@@ -185,6 +198,32 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
       screenshotBase64 = base64Encode(jpegBytes);
     }
 
+    // 網路掃描是背景平行跑的,這裡收成果。設一個保險逾時,萬一還沒跑完
+    // 也不要卡住整個掃描結束流程太久(掃描本身已經跑了幾秒,這裡只再多等一點點)。
+    List<NetworkDevice> networkDevices = [];
+    if (_networkScanFuture != null) {
+      try {
+        networkDevices = await _networkScanFuture!.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => [],
+        );
+      } catch (_) {
+        networkDevices = [];
+      }
+    }
+
+    List<BluetoothDeviceInfo> bluetoothDevices = [];
+    if (_bluetoothScanFuture != null) {
+      try {
+        bluetoothDevices = await _bluetoothScanFuture!.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => [],
+        );
+      } catch (_) {
+        bluetoothDevices = [];
+      }
+    }
+
     final summary = DetectionSessionSummary(
       glints: trackedGlints,
       boundingBoxes: _detectedBoxes,
@@ -195,6 +234,8 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
       remoteYoloAvailable: _objectDetectionRan,
       environmentContext: widget.environmentContext,
       screenshotBase64: screenshotBase64,
+      networkDevices: networkDevices,
+      bluetoothDevices: bluetoothDevices,
       scanStartedAt: _scanStartedAt ?? DateTime.now(),
       scanEndedAt: DateTime.now(),
     );
@@ -422,6 +463,12 @@ class _DebugResultScreen extends StatelessWidget {
             Text('物件偵測是否有成功執行: ${summary.remoteYoloAvailable}'),
             Text('偵測到的候選物件數: ${summary.boundingBoxes.length}'),
             Text('是否有附上截圖: ${summary.screenshotBase64 != null}'),
+            Text('同網段偵測到的裝置數: ${summary.networkDevices.length}'),
+            Text(
+                '疑似攝影機裝置數: ${summary.networkDevices.where((d) => d.looksLikeCamera).length}'),
+            Text('附近藍牙裝置數: ${summary.bluetoothDevices.length}'),
+            Text(
+                '可疑藍牙裝置數: ${summary.bluetoothDevices.where((d) => d.suspicious).length}'),
             Text('掃描時開始環境亮度: ${summary.ambientBrightnessAtStart.toStringAsFixed(1)}'),
             Text('是否有開手電筒: ${summary.torchUsedDuringScan}'),
             const Divider(height: 32),
