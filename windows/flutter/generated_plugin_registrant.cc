@@ -12,6 +12,12 @@
 void RegisterPlugins(flutter::PluginRegistry* registry) {
   GeolocatorWindowsRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("GeolocatorWindows"));
+#include <flutter_blue_plus_winrt/flutter_blue_plus_plugin.h>
+#include <permission_handler_windows/permission_handler_windows_plugin.h>
+
+void RegisterPlugins(flutter::PluginRegistry* registry) {
+  FlutterBluePlusPluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("FlutterBluePlusPlugin"));
   PermissionHandlerWindowsPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("PermissionHandlerWindowsPlugin"));
 }

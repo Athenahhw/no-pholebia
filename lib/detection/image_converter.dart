@@ -1,8 +1,3 @@
-// ============================================================
-// image_converter.dart
-// 功能: 把 camera 套件的 CameraImage(YUV420格式)轉成
-//       image 套件的 img.Image,供 glint_detector / yolo_inference 使用
-// ============================================================
 import 'package:camera/camera.dart';
 import 'package:image/image.dart' as img;
 

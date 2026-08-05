@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'result_page.dart';
 import 'ai_assistant_page.dart';
 import 'case_map_page.dart';
+import '../detection/scan_screen.dart';
+import '../detection/detection_result.dart';
 
 class ScanPage extends StatefulWidget {
   const ScanPage({super.key});
@@ -15,10 +17,8 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
   final Color lightBackground = const Color(0xFFF0EEDC);
 
   final TextEditingController _environmentController = TextEditingController();
-  // 1. 新增 FocusNode 用來監聽鍵盤是否收起 (失去焦點)
   final FocusNode _environmentFocusNode = FocusNode();
 
-  // 控制勾勾顯示的狀態
   bool _showCheckIcon = false;
 
   late AnimationController _animationController;
@@ -28,10 +28,8 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
   void initState() {
     super.initState();
 
-    // 2. 監聽 FocusNode 狀態：當鍵盤按掉 (hasFocus == false) 且有文字時才顯示勾勾
     _environmentFocusNode.addListener(() {
       if (!_environmentFocusNode.hasFocus) {
-        // 鍵盤收起了 (失去焦點)
         setState(() {
           _showCheckIcon = _environmentController.text.trim().isNotEmpty;
         });
@@ -53,19 +51,60 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
   @override
   void dispose() {
     _environmentController.dispose();
-    _environmentFocusNode.dispose(); // 記得銷毀 FocusNode
+    _environmentFocusNode.dispose();
     _animationController.dispose();
     super.dispose();
+  }
+
+  (RiskLevel, int) _buildResultFrom(
+    DetectionSessionSummary summary,
+    Map<String, dynamic>? backendResult,
+  ) {
+    if (backendResult != null && backendResult['riskLevel'] != null) {
+      final level = backendResult['riskLevel'] == 'high' ? RiskLevel.high : RiskLevel.low;
+      final score = (backendResult['riskPercentage'] as num?)?.toInt() ?? 0;
+      return (level, score);
+    }
+
+    final hasRisk = summary.highRiskGlintCount > 0 || summary.boundingBoxes.isNotEmpty;
+    return (
+      hasRisk ? RiskLevel.high : RiskLevel.low,
+      hasRisk ? 70 : 5,
+    );
+  }
+
+  void _startScan(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ScanScreen(
+          environmentContext: _environmentController.text.trim().isEmpty
+              ? null
+              : _environmentController.text.trim(),
+          onScanComplete: (summary, backendResult) {
+            final result = _buildResultFrom(summary, backendResult);
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ResultPage(
+                  riskLevel: result.$1,
+                  score: result.$2,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      // 讓使用者點擊空白處也能自動按掉鍵盤並觸發驗證
       body: GestureDetector(
         onTap: () {
-          FocusScope.of(context).unfocus(); // 收起鍵盤
+          FocusScope.of(context).unfocus();
         },
         child: Stack(
           clipBehavior: Clip.none,
@@ -114,7 +153,7 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
+                                  color: Colors.black.withValues(alpha: 0.05),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
@@ -122,7 +161,7 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                             ),
                             child: TextField(
                               controller: _environmentController,
-                              focusNode: _environmentFocusNode, // 綁定 FocusNode
+                              focusNode: _environmentFocusNode,
                               readOnly: false,
                               keyboardType: TextInputType.text,
                               textInputAction: TextInputAction.done,
@@ -135,8 +174,6 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                                 hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 15),
                                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                                 border: InputBorder.none,
-
-                                // 只有在鍵盤收起 (_showCheckIcon == true) 時才顯示 Check.png
                                 suffixIcon: _showCheckIcon
                                     ? Padding(
                                         padding: const EdgeInsets.all(12.0),
@@ -149,7 +186,7 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                                     : null,
                               ),
                               onSubmitted: (value) {
-                                FocusScope.of(context).unfocus(); // 按完成收起鍵盤
+                                FocusScope.of(context).unfocus();
                               },
                             ),
                           ),
@@ -179,8 +216,8 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
                                       border: Border.all(
-                                        color: const Color(0xFFFFFEC3).withOpacity(
-                                          (1.0 - _animationController.value).clamp(0.0, 1.0),
+                                        color: const Color(0xFFFFFEC3).withValues(
+                                          alpha: (1.0 - _animationController.value).clamp(0.0, 1.0),
                                         ),
                                         width: 1.5,
                                       ),
@@ -189,17 +226,7 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                                 },
                               ),
                               GestureDetector(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => const ResultPage(
-                                        riskLevel: RiskLevel.low,
-                                        score: 4,
-                                      ),
-                                    ),
-                                  );
-                                },
+                                onTap: () => _startScan(context),
                                 child: SizedBox(
                                   width: 260,
                                   height: 260,
@@ -250,7 +277,7 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                         color: const Color(0xFFF0EED3),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.12),
+                            color: Colors.black.withValues(alpha: 0.12),
                             blurRadius: 10,
                             offset: const Offset(0, -5),
                           ),
@@ -268,10 +295,11 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                           icon: 'assets/images/scan.png',
                           label: '一鍵掃描',
                           isSelected: true,
+                          onTap: () => _startScan(context),
                         ),
                         const SizedBox(width: 61.0),
 
-                        // 👈 AI 助理 (加載點擊跳轉事件)
+                        // AI 助理
                         _buildNavItem(
                           icon: 'assets/images/AI.png',
                           label: 'AI助理',
@@ -281,7 +309,7 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                               context,
                               PageRouteBuilder(
                                 pageBuilder: (context, anim1, anim2) => const AIAssistantPage(),
-                                transitionDuration: Duration.zero, // 無過場動畫切換
+                                transitionDuration: Duration.zero,
                               ),
                             );
                           },
@@ -290,19 +318,19 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
 
                         // 案件地圖
                         _buildNavItem(
-  icon: 'assets/images/map.png',
-  label: '案件地圖',
-  isSelected: false,
-  onTap: () {
-    Navigator.pushReplacement(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (context, anim1, anim2) => const CaseMapPage(),
-        transitionDuration: Duration.zero, // 無縫切換
-      ),
-    );
-  },
-),
+                          icon: 'assets/images/map.png',
+                          label: '案件地圖',
+                          isSelected: false,
+                          onTap: () {
+                            Navigator.pushReplacement(
+                              context,
+                              PageRouteBuilder(
+                                pageBuilder: (context, anim1, anim2) => const CaseMapPage(),
+                                transitionDuration: Duration.zero,
+                              ),
+                            );
+                          },
+                        ),
                       ],
                     ),
                   ),
@@ -315,15 +343,14 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
     );
   }
 
-  // 👈 新增 VoidCallback? onTap 參數
   Widget _buildNavItem({
     required String icon,
     required String label,
     required bool isSelected,
-    VoidCallback? onTap,
+    required VoidCallback? onTap,
   }) {
     return GestureDetector(
-      onTap: onTap, // 綁定手勢
+      onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -336,7 +363,7 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
               boxShadow: isSelected
                   ? [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.18),
+                        color: Colors.black.withValues(alpha: 0.18),
                         blurRadius: 8,
                         offset: const Offset(0, -4),
                       ),

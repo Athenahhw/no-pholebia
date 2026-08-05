@@ -1,17 +1,8 @@
-// ============================================================
-// glint_detector.dart
-// 負責人: 前端 - YOLO物理特徵/反光偵測 組
-// 功能: 從相機影格中偵測可疑亮點(反光候選區),用 flood-fill 做
-//       簡易 blob detection,過濾雜訊與大片過曝區域。
-// ============================================================
 import 'package:image/image.dart' as img;
 import 'detection_result.dart';
 
 class GlintDetector {
-  /// 亮度門檻(0~255),高於此值視為候選亮點
   final int threshold;
-
-  /// blob 面積過濾範圍,避免抓到雜訊(太小)或整片過曝(太大)
   final int minBlobSize;
   final int maxBlobSize;
 
@@ -21,7 +12,6 @@ class GlintDetector {
     this.maxBlobSize = 300,
   });
 
-  /// 從單張影像找出所有超過亮度門檻的候選亮點
   List<GlintCandidate> detect(img.Image frame) {
     final gray = img.grayscale(frame);
     final width = gray.width;
@@ -50,7 +40,6 @@ class GlintDetector {
                 .reduce((a, b) => a + b) /
             blob.length;
 
-        // 用 blob 面積概估半徑(視為近似圓形)
         final radius = (blob.length / 3.14159).clamp(1, 999).round();
 
         candidates.add(GlintCandidate(
@@ -65,7 +54,22 @@ class GlintDetector {
     return candidates;
   }
 
-  /// 用迭代式(非遞迴,避免大圖 stack overflow)flood-fill 找出連通的高亮度區域
+  /// 量測整張影像的平均亮度(0~255),給自動開燈判斷使用。
+  /// 用降採樣(每隔幾個像素取樣一次)加快速度,不用整張逐像素算。
+  static double averageBrightness(img.Image frame, {int sampleStep = 8}) {
+    final gray = img.grayscale(frame);
+    double total = 0;
+    int count = 0;
+    for (int y = 0; y < gray.height; y += sampleStep) {
+      for (int x = 0; x < gray.width; x += sampleStep) {
+        total += img.getLuminance(gray.getPixel(x, y));
+        count++;
+      }
+    }
+    if (count == 0) return 0;
+    return total / count;
+  }
+
   List<(int, int)> _floodFill(
     img.Image gray,
     int startX,
@@ -101,23 +105,16 @@ class GlintDetector {
   }
 }
 
-// ============================================================
-// GlintTracker
-// 功能: 多幀追蹤同一亮點,計算閃爍分數(flickerScore)。
-//       針孔鏡頭反光具方向性(retroreflection),角度微幅改變時
-//       亮度會明顯變化;一般反光物(金屬、油漆)則相對穩定。
-// ============================================================
 class _Track {
   final List<GlintCandidate> history = [];
 }
 
 class GlintTracker {
-  final int maxTrackDistance; // 判定為同一顆亮點的座標容忍距離(px)
+  final int maxTrackDistance;
   final List<_Track> _tracks = [];
 
   GlintTracker({this.maxTrackDistance = 20});
 
-  /// 每拿到新一幀的候選點就呼叫一次,內部自動配對到既有 track 或建立新 track
   void addFrame(List<GlintCandidate> candidatesInFrame) {
     final unmatched = List<GlintCandidate>.from(candidatesInFrame);
 
@@ -141,7 +138,6 @@ class GlintTracker {
       }
     }
 
-    // 沒配對到既有 track 的候選點,視為新的 track 起點
     for (final c in unmatched) {
       _tracks.add(_Track()..history.add(c));
     }
@@ -153,8 +149,6 @@ class GlintTracker {
     return (dx * dx + dy * dy);
   }
 
-  /// 蒐集夠幀數後呼叫,回傳每條 track 的閃爍分數(亮度標準差,越高越可疑)
-  /// 只回傳幀數 >= minFrames 的 track(太短的追蹤不具統計意義)
   List<GlintCandidate> computeFlickerScores({int minFrames = 5}) {
     final results = <GlintCandidate>[];
 
@@ -167,7 +161,7 @@ class GlintTracker {
               .map((b) => (b - mean) * (b - mean))
               .reduce((a, b) => a + b) /
           brightnesses.length;
-      final stdDev = variance <= 0 ? 0.0 : (variance).abs();
+      final stdDev = variance <= 0 ? 0.0 : variance.abs();
 
       final last = track.history.last;
       results.add(GlintCandidate(
