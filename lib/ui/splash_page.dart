@@ -42,7 +42,7 @@ class _SplashPageState extends State<SplashPage> {
             ),
             const SizedBox(height: 48),
             const Text(
-              'No PhoLebia',
+              'No Pholebia',
               style: TextStyle(
                 fontSize: 24,
                 color: Colors.white,
