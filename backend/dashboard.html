@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>No Pholebia 後台監控</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Helvetica Neue", "PingFang TC", sans-serif;
+    background: #f1eee4;
+    color: #2c2c2a;
+    margin: 0;
+    padding: 24px;
+  }
+  h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
+  .subtitle { color: #5f5e5a; font-size: 14px; margin: 0 0 24px; }
+
+  .config-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 24px; }
+  .config-bar input {
+    flex: 1; max-width: 320px; height: 36px; padding: 0 12px;
+    border: 1px solid #d3d1c7; border-radius: 8px; font-size: 14px;
+  }
+  .config-bar button {
+    height: 36px; padding: 0 16px; border: 1px solid #d3d1c7;
+    border-radius: 8px; background: white; cursor: pointer; font-size: 14px;
+  }
+  .config-bar button:hover { background: #f1eee4; }
+  #status-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    display: inline-block; margin-right: 6px; background: #b4b2a9;
+  }
+  #status-dot.ok { background: #639922; }
+  #status-dot.err { background: #d85a30; }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+  .stat-card { background: white; border: 1px solid #e5e3d8; border-radius: 12px; padding: 16px; }
+  .stat-card .label { font-size: 13px; color: #5f5e5a; margin-bottom: 4px; }
+  .stat-card .value { font-size: 26px; font-weight: 500; }
+  .stat-card.pending { border: 2px solid #ba7517; }
+  .stat-card.pending .value { color: #854f0b; }
+  .stat-card.high .value { color: #d85a30; }
+  .stat-card.low .value { color: #639922; }
+
+  .filter-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+  .filter-bar button {
+    padding: 6px 14px; border: 1px solid #d3d1c7; border-radius: 20px;
+    background: white; font-size: 13px; cursor: pointer;
+  }
+  .filter-bar button.active { background: #395938; color: white; border-color: #395938; }
+
+  table {
+    width: 100%; border-collapse: collapse; background: white;
+    border-radius: 12px; overflow: hidden; font-size: 13px;
+  }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eeece2; }
+  th { background: #f7f5ec; font-weight: 500; color: #5f5e5a; }
+  tr.data-row:hover { background: #faf9f3; cursor: pointer; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 500; }
+  .badge.high { background: #faece7; color: #993c1d; }
+  .badge.medium { background: #faeeda; color: #854f0b; }
+  .badge.low { background: #eaf3de; color: #3b6d11; }
+  .badge.pending { background: #f0eed3; color: #5f5e5a; }
+  .badge.approved { background: #eaf3de; color: #3b6d11; }
+  .badge.rejected { background: #faece7; color: #993c1d; }
+
+  .action-btn {
+    padding: 4px 10px; border-radius: 6px; font-size: 12px; border: none;
+    cursor: pointer; margin-right: 6px;
+  }
+  .action-btn.approve { background: #639922; color: white; }
+  .action-btn.reject { background: #d85a30; color: white; }
+
+  #empty-state, #loading-state { text-align: center; padding: 48px; color: #888780; font-size: 14px; }
+
+  .modal-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.4); align-items: center; justify-content: center;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: white; border-radius: 12px; max-width: 560px; width: 90%;
+    max-height: 80vh; overflow-y: auto; padding: 20px;
+  }
+  .modal h3 { margin-top: 0; }
+  .modal pre {
+    background: #f7f5ec; padding: 12px; border-radius: 8px;
+    font-size: 12px; white-space: pre-wrap; word-break: break-word;
+  }
+  .modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+  .modal-actions button { padding: 8px 16px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
+  .modal-actions .approve { background: #639922; color: white; }
+  .modal-actions .reject { background: #d85a30; color: white; }
+  .modal-actions .close { background: #f1eee4; color: #2c2c2a; }
+</style>
+</head>
+<body>
+
+<h1>No Pholebia 後台監控</h1>
+<p class="subtitle">審核App自動傳入的案件,核准後才會進入案件地圖</p>
+
+<div class="config-bar">
+  <span id="status-dot"></span>
+  <input id="api-base" type="text" value="http://127.0.0.1:8000" />
+  <button onclick="refreshAll()">連線 / 重新整理</button>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card pending">
+    <div class="label">待審核</div>
+    <div class="value" id="stat-pending">--</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">總掃描次數</div>
+    <div class="value" id="stat-total">--</div>
+  </div>
+  <div class="stat-card high">
+    <div class="label">高風險</div>
+    <div class="value" id="stat-high">--</div>
+  </div>
+  <div class="stat-card low">
+    <div class="label">低風險</div>
+    <div class="value" id="stat-low">--</div>
+  </div>
+</div>
+
+<div class="filter-bar" id="filter-bar">
+  <button class="active" data-review="pending">待審核</button>
+  <button data-review="approved">已核准</button>
+  <button data-review="rejected">已駁回</button>
+  <button data-review="">全部</button>
+</div>
+
+<div id="loading-state">連線中...</div>
+<div id="empty-state" style="display:none;">目前沒有符合條件的紀錄</div>
+<table id="records-table" style="display:none;">
+  <thead>
+    <tr>
+      <th>時間</th>
+      <th>環境</th>
+      <th>風險等級</th>
+      <th>風險機率</th>
+      <th>反光點</th>
+      <th>審核狀態</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody id="records-body"></tbody>
+</table>
+
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <h3>案件詳細內容 <span id="modal-id"></span></h3>
+    <pre id="modal-content"></pre>
+    <div class="modal-actions">
+      <button class="approve" onclick="reviewCurrentRecord('approved')">核准,加入地圖</button>
+      <button class="reject" onclick="reviewCurrentRecord('rejected')">駁回</button>
+      <button class="close" onclick="closeModal()">關閉</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentReviewFilter = "pending";
+let currentModalRecordId = null;
+
+function apiBase() {
+  return document.getElementById("api-base").value.replace(/\/$/, "");
+}
+
+function setStatus(ok) {
+  document.getElementById("status-dot").className = ok ? "ok" : "err";
+}
+
+async function fetchStats() {
+  const res = await fetch(apiBase() + "/api/v1/stats");
+  const data = await res.json();
+  document.getElementById("stat-total").textContent = data.total_scans ?? 0;
+  const byLevel = data.by_risk_level || {};
+  document.getElementById("stat-high").textContent = byLevel.high ?? 0;
+  document.getElementById("stat-low").textContent = byLevel.low ?? 0;
+  const byReview = data.by_review_status || {};
+  document.getElementById("stat-pending").textContent = byReview.pending ?? 0;
+}
+
+async function fetchRecords() {
+  const url = apiBase() + "/api/v1/records?limit=100" +
+    (currentReviewFilter ? "&review_status=" + currentReviewFilter : "");
+  const res = await fetch(url);
+  const data = await res.json();
+  renderRecords(data.records || []);
+}
+
+function renderRecords(records) {
+  const tbody = document.getElementById("records-body");
+  const table = document.getElementById("records-table");
+  const empty = document.getElementById("empty-state");
+  tbody.innerHTML = "";
+
+  if (records.length === 0) {
+    table.style.display = "none";
+    empty.style.display = "block";
+    return;
+  }
+  table.style.display = "table";
+  empty.style.display = "none";
+
+  for (const r of records) {
+    const tr = document.createElement("tr");
+    tr.className = "data-row";
+    const level = (r.risk_level || "").toLowerCase();
+    const review = (r.review_status || "pending").toLowerCase();
+    const reviewLabel = { pending: "待審核", approved: "已核准", rejected: "已駁回" }[review] || review;
+
+    let actionsHtml = "";
+    if (review === "pending") {
+      actionsHtml =
+        "<button class='action-btn approve' onclick='quickReview(event," + r.id + ",\"approved\")'>核准</button>" +
+        "<button class='action-btn reject' onclick='quickReview(event," + r.id + ",\"rejected\")'>駁回</button>";
+    }
+
+    tr.innerHTML =
+      "<td>" + formatTime(r.created_at) + "</td>" +
+      "<td>" + (r.environment_context || "-") + "</td>" +
+      "<td><span class='badge " + level + "'>" + (r.risk_level || "-") + "</span></td>" +
+      "<td>" + (r.risk_percentage ?? "-") + "%</td>" +
+      "<td>" + r.high_risk_glint_count + "/" + r.total_glint_count + "</td>" +
+      "<td><span class='badge " + review + "'>" + reviewLabel + "</span></td>" +
+      "<td>" + actionsHtml + "</td>";
+
+    tr.onclick = (e) => {
+      if (e.target.tagName === "BUTTON") return;
+      openDetail(r.id);
+    };
+    tbody.appendChild(tr);
+  }
+}
+
+function formatTime(iso) {
+  if (!iso) return "-";
+  return new Date(iso).toLocaleString("zh-TW", { hour12: false });
+}
+
+async function openDetail(id) {
+  currentModalRecordId = id;
+  const res = await fetch(apiBase() + "/api/v1/records/" + id);
+  const data = await res.json();
+  document.getElementById("modal-id").textContent = "#" + id;
+  document.getElementById("modal-content").textContent = JSON.stringify(data, null, 2);
+  document.getElementById("modal-overlay").classList.add("show");
+}
+
+function closeModal() {
+  document.getElementById("modal-overlay").classList.remove("show");
+  currentModalRecordId = null;
+}
+
+async function reviewCurrentRecord(decision) {
+  if (currentModalRecordId == null) return;
+  await submitReview(currentModalRecordId, decision);
+  closeModal();
+  refreshAll();
+}
+
+async function quickReview(event, id, decision) {
+  event.stopPropagation();
+  await submitReview(id, decision);
+  refreshAll();
+}
+
+async function submitReview(id, decision) {
+  await fetch(apiBase() + "/api/v1/records/" + id + "/review", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision })
+  });
+}
+
+document.querySelectorAll("#filter-bar button").forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll("#filter-bar button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    currentReviewFilter = btn.dataset.review;
+    fetchRecords();
+  };
+});
+
+async function refreshAll() {
+  document.getElementById("loading-state").style.display = "block";
+  try {
+    await Promise.all([fetchStats(), fetchRecords()]);
+    setStatus(true);
+  } catch (e) {
+    setStatus(false);
+    console.error(e);
+  } finally {
+    document.getElementById("loading-state").style.display = "none";
+  }
+}
+
+refreshAll();
+setInterval(refreshAll, 10000);
+</script>
+
+</body>
+</html>
