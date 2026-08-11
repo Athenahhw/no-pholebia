@@ -1,45 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:geolocator/geolocator.dart';
 import '../models/risk_marker_data.dart';
+import '../services/location_service.dart'; // 👈 匯入 LocationService
 import 'scan_page.dart';
 import 'ai_assistant_page.dart';
-
-// 👈 獲取手機當前 GPS 位置的非同步函式
-Future<LatLng?> _determinePosition() async {
-  bool serviceEnabled;
-  LocationPermission permission;
-
-  // 1. 檢查手機 GPS 功能是否開啟
-  serviceEnabled = await Geolocator.isLocationServiceEnabled();
-  if (!serviceEnabled) {
-    // 手機 GPS 未開啟，可引導使用者開啓
-    return null;
-  }
-
-  // 2. 檢查權限狀態
-  permission = await Geolocator.checkPermission();
-  if (permission == LocationPermission.denied) {
-    // 向使用者請求權限
-    permission = await Geolocator.requestPermission();
-    if (permission == LocationPermission.denied) {
-      return null;
-    }
-  }
-
-  if (permission == LocationPermission.deniedForever) {
-    // 使用者永久拒絕授權，需手動到手機設定開啟
-    return null;
-  }
-
-  // 3. 取得當前真實座標 (設定高精確度)
-  Position position = await Geolocator.getCurrentPosition(
-    desiredAccuracy: LocationAccuracy.high,
-  );
-
-  return LatLng(position.latitude, position.longitude);
-}
 
 class CaseMapPage extends StatefulWidget {
   const CaseMapPage({super.key});
@@ -49,7 +14,18 @@ class CaseMapPage extends StatefulWidget {
 }
 
 class _CaseMapPageState extends State<CaseMapPage> {
-  LatLng _currentPosition = const LatLng(25.0245, 121.5410); // 預設給一個座標
+  // 地圖控制器，用來動態移動地圖視角
+  final MapController _mapController = MapController();
+
+  // 預設位置 (國北教大附近)，抓到 GPS 後會自動更新
+  LatLng _currentPosition = const LatLng(25.0263, 121.5435);
+  bool _isLoadingLocation = true;
+
+  final Color baseGreen = const Color(0xFF395938);
+
+  bool _showHintCard = true;
+  RiskMarkerData? _activeRiskMarker;
+  bool _showBottomCard = false;
 
   @override
   void initState() {
@@ -57,31 +33,35 @@ class _CaseMapPageState extends State<CaseMapPage> {
     _getUserLocation();
   }
 
+  /// 📍 獲取真實 GPS 座標並移動地圖
   Future<void> _getUserLocation() async {
-    LatLng? userLatLng = await _determinePosition();
-    if (userLatLng != null) {
+    LatLng? userLatLng = await LocationService.getCurrentLocation();
+    
+    if (userLatLng != null && mounted) {
       setState(() {
-        _currentPosition = userLatLng; // 👈 更新為手機實體 GPS 座標
+        _currentPosition = userLatLng; // 👈 更新使用者的真實座標
+        _isLoadingLocation = false;
+      });
+
+      // 將地圖中心平滑移動至使用者當前位置
+      _mapController.move(_currentPosition, 16.0);
+    } else if (mounted) {
+      setState(() {
+        _isLoadingLocation = false;
       });
     }
   }
-  final Color baseGreen = const Color(0xFF395938);
-
-  bool _showHintCard = true;
-  RiskMarkerData? _activeRiskMarker;
-  bool _showBottomCard = false;
-
-  final LatLng _ntuePosition = const LatLng(25.0263, 121.5435);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
-          // 1. 🗺️ 安全的單一 FlutterMap 元件（避免 GPU 重複初始化導致崩潰）
+          // 1. 🗺️ FlutterMap 元件
           FlutterMap(
+            mapController: _mapController, // 👈 綁定地圖控制器
             options: MapOptions(
-              initialCenter: _ntuePosition,
+              initialCenter: _currentPosition,
               initialZoom: 15.5,
               maxZoom: 18.0,
               minZoom: 10.0,
@@ -89,34 +69,35 @@ class _CaseMapPageState extends State<CaseMapPage> {
             children: [
               // (1) 底層地圖圖資
               TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.app',
-                maxZoom: 18,
-                maxNativeZoom: 18,
-              ),
+  // 台灣通用電子地圖（WMTS 規範，極速且在台灣完全不跳 403）
+  urlTemplate: 'https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}',
+  maxZoom: 20,
+  maxNativeZoom: 19, // 支援原生放大到 19 級（看得到小巷與門牌）
+  userAgentPackageName: 'dev.daphne.nopholebia.app',
+),
 
-              // (2) 🖤 黑色質感遮罩（位在地圖圖資之上、Marker圖層之下）
+              // (2) 🖤 黑色質感遮罩
               IgnorePointer(
                 child: Container(
                   color: Colors.black.withOpacity(0.12),
                 ),
               ),
 
-              // (3) 標記圖層（位在黑色遮罩之上，視覺最顯眼）
+              // (3) 標記圖層
               MarkerLayer(
                 markers: [
-                  // 您的位置地標 (帶下方文字)
+                  // 📍 您的位置地標 (動態顯示 _currentPosition)
                   Marker(
-                    point: const LatLng(25.0245, 121.5410),
-                    width: 70,
-                    height: 52,
+                    point: _currentPosition,
+                    width: 80,
+                    height: 56,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           Icons.location_on,
                           color: baseGreen,
-                          size: 30,
+                          size: 32,
                         ),
                         Text(
                           '您的位置',
@@ -168,6 +149,30 @@ class _CaseMapPageState extends State<CaseMapPage> {
                 ],
               ),
             ],
+          ),
+
+          // 🎯 定位重置按鈕 (右下角定位小圖示)
+          Positioned(
+            right: 20,
+            bottom: 130,
+            child: FloatingActionButton(
+              mini: true,
+              backgroundColor: Colors.white,
+              elevation: 4,
+              onPressed: () {
+                _mapController.move(_currentPosition, 16.0);
+              },
+              child: _isLoadingLocation
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: baseGreen,
+                      ),
+                    )
+                  : Icon(Icons.my_location, color: baseGreen),
+            ),
           ),
 
           // 2. 🟢 中央 Hint 操作提示卡片
@@ -252,7 +257,7 @@ class _CaseMapPageState extends State<CaseMapPage> {
             child: _buildBottomStaticNav(),
           ),
 
-          // 4. 底部彈出內容卡片（蓋過導覽列，切齊底部）
+          // 4. 底部彈出內容卡片
           if (_showBottomCard && _activeRiskMarker != null)
             _buildBottomRiskCard(),
         ],
