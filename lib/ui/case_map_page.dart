@@ -5,6 +5,9 @@ import '../models/risk_marker_data.dart';
 import '../services/location_service.dart'; // 👈 匯入 LocationService
 import 'scan_page.dart';
 import 'ai_assistant_page.dart';
+import 'dart:convert';
+import 'package:flutter/services.dart' show rootBundle;
+import '../risk/time_risk_service.dart'; // 👈 導入你的時間風險算式
 
 class CaseMapPage extends StatefulWidget {
   const CaseMapPage({super.key});
@@ -26,11 +29,15 @@ class _CaseMapPageState extends State<CaseMapPage> {
   bool _showHintCard = true;
   RiskMarkerData? _activeRiskMarker;
   bool _showBottomCard = false;
+  
+// 存放動態從 cases.json 產生的地圖標籤
+  List<Marker> _jsonCaseMarkers = [];
 
   @override
   void initState() {
     super.initState();
     _getUserLocation();
+    _loadCasesFromJson(); // 👈 頁面初始化時載入案件資料
   }
 
   /// 📍 獲取真實 GPS 座標並移動地圖
@@ -49,6 +56,81 @@ class _CaseMapPageState extends State<CaseMapPage> {
       setState(() {
         _isLoadingLocation = false;
       });
+    }
+  }
+
+  /// 讀取 assets/json/cases.json 並結合時間風險演算[cite: 4, 7]
+  Future<void> _loadCasesFromJson() async {
+    try {
+      final String jsonString = await rootBundle.loadString('assets/json/cases.json');
+      final List<dynamic> data = json.decode(jsonString);
+
+      List<Marker> loadedMarkers = [];
+
+      for (var item in data) {
+        final double lat = (item['latitude'] as num).toDouble();
+        final double lng = (item['longitude'] as num).toDouble();
+        final String title = item['title'] ?? '未命名案件';
+        final String location = item['location_name'] ?? '未知地點';
+        final String endDate = item['end_date'] ?? '2026-01-01';
+
+        // 💡 呼叫時間風險演算[cite: 4, 8]
+        final double riskWeight = TimeRiskService.calculateTimeRiskWeight(endDate);
+        final String riskLevel = TimeRiskService.getRiskLevelString(riskWeight);
+
+        // 根據風險等級設定光暈顏色
+        Color riskColor = Colors.red;
+        if (riskLevel == 'MEDIUM') {
+          riskColor = Colors.orange;
+        } else if (riskLevel == 'LOW') {
+          riskColor = Colors.amber;
+        }
+
+        loadedMarkers.add(
+          Marker(
+            point: LatLng(lat, lng),
+            width: 74,
+            height: 74,
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _showHintCard = false;
+                  // 點擊案件在地圖下方顯示精美卡片[cite: 2, 7]
+                  _activeRiskMarker = RiskMarkerData(
+                    position: LatLng(lat, lng),
+                    riskColor: riskColor,
+                    title: title,
+                    titleColor: riskColor,
+                    content: '地點：$location\n發生時間：$endDate\n風險加權值：${(riskWeight * 100).toInt()}% ($riskLevel)',
+                  );
+                  _showBottomCard = true;
+                });
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      riskColor.withOpacity(0.9),
+                      riskColor.withOpacity(0.1),
+                    ],
+                    stops: const [0.3, 1.0],
+                  ),
+                ),
+                child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 28),
+              ),
+            ),
+          ),
+        );
+      }
+
+      if (mounted) {
+        setState(() {
+          _jsonCaseMarkers = loadedMarkers;
+        });
+      }
+    } catch (e) {
+      print('載入 cases.json 失敗: $e');
     }
   }
 
