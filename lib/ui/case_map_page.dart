@@ -8,6 +8,8 @@ import 'ai_assistant_page.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 import '../risk/time_risk_service.dart'; // 👈 導入你的時間風險算式
+import '../report/report_model.dart';
+import '../report/report_dialog.dart';
 
 class CaseMapPage extends StatefulWidget {
   const CaseMapPage({super.key});
@@ -29,9 +31,12 @@ class _CaseMapPageState extends State<CaseMapPage> {
   bool _showHintCard = true;
   RiskMarkerData? _activeRiskMarker;
   bool _showBottomCard = false;
-  
+
 // 存放動態從 cases.json 產生的地圖標籤
   List<Marker> _jsonCaseMarkers = [];
+
+// 存放使用者剛通報的即時地圖標籤
+  List<Marker> _userReportMarkers = [];
 
   @override
   void initState() {
@@ -134,6 +139,48 @@ class _CaseMapPageState extends State<CaseMapPage> {
     }
   }
 
+  /// 將使用者舉報的地點，動態轉為紫色警示地標加到地圖上[cite: 2, 5]
+  void _addUserReportToMap(UserReport report) {
+    final newMarker = Marker(
+      point: LatLng(report.latitude, report.longitude),
+      width: 74,
+      height: 74,
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _showHintCard = false;
+            // 點擊即時舉報地點時顯示的底欄資訊卡片[cite: 2, 7]
+            _activeRiskMarker = RiskMarkerData(
+              position: LatLng(report.latitude, report.longitude),
+              riskColor: Colors.deepPurple, // 使用紫色區隔即時通報點
+              title: '【使用者舉報】${report.title}',
+              titleColor: Colors.deepPurple,
+              content: '地點：${report.locationName}\n通報時間：${report.date}\n說明：${report.description}\n(狀態：待審核通報)',
+            );
+            _showBottomCard = true;
+          });
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(
+              colors: [
+                Colors.deepPurple.withOpacity(0.9),
+                Colors.deepPurple.withOpacity(0.1),
+              ],
+              stops: const [0.3, 1.0],
+            ),
+          ),
+          child: const Icon(Icons.report_problem_rounded, color: Colors.white, size: 28),
+        ),
+      ),
+    );
+
+    setState(() {
+      _userReportMarkers.add(newMarker);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -228,6 +275,8 @@ class _CaseMapPageState extends State<CaseMapPage> {
                       ),
                     );
                   }).toList(),
+                  ..._jsonCaseMarkers,
+                  ..._userReportMarkers,
                 ],
               ),
             ],
@@ -254,6 +303,28 @@ class _CaseMapPageState extends State<CaseMapPage> {
                       ),
                     )
                   : Icon(Icons.my_location, color: baseGreen),
+            ),
+          ),
+
+          Positioned(
+            right: 20,
+            bottom: 190,
+            child: FloatingActionButton.extended(
+              heroTag: 'report_btn',
+              backgroundColor: Colors.redAccent,
+              elevation: 4,
+              icon: const Icon(Icons.add_location_alt_rounded, color: Colors.white),
+              label: const Text('通報偷拍點', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              onPressed: () async {
+                final result = await showDialog<UserReport>(
+                  context: context,
+                  builder: (ctx) => const ReportCaseDialog(),
+                );
+
+                if (result != null) {
+                  _addUserReportToMap(result);
+                }
+              },
             ),
           ),
 
