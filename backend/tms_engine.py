@@ -1,9 +1,7 @@
 import math
 
-
 def parse_environment_multiplier(user_input: str) -> tuple[float, str]:
-
-    normalized_input = user_input.strip().lower()
+    normalized_input = (user_input or "").strip().lower()
 
     HIGH_PRIVACY_KEYWORDS = [
         "廁", "洗手間", "便所", "試衣", "更衣", "淋浴", "浴室", "湯屋",
@@ -36,29 +34,45 @@ def parse_environment_multiplier(user_input: str) -> tuple[float, str]:
 
 
 def calculate_threat_score(
-    optical_glint_score: float,        # 光學反光分數 (0.0 ~ 1.0),由高風險反光點數量換算
-    wifi_camera_detected: bool,        # 同網段是否偵測到疑似攝影機裝置
-    bluetooth_suspicious_detected: bool,  # 附近是否偵測到命名可疑的藍牙裝置
-    environment_type: str
+    environment_context: str = "",
+    glints: list = None,
+    high_risk_glint_count: int = 0,
+    torch_used: bool = False,
+    ambient_brightness: float = 128.0,
+    network_devices: list = None,
+    bluetooth_devices: list = None,
+    wifi_camera_detected: bool = False,
+    bluetooth_suspicious_detected: bool = False,
+    **kwargs
 ) -> dict:
     """
     多模態威脅融合機率算分引擎 (TMS Engine)
-
-    這個分數是「輔助訊號」,給LLM參考,不是最終判斷依據 —— 因為這是人工
-    設定權重的公式,無法真的理解畫面內容。最終風險判斷由 llm_agent.py
-    呼叫 Gemini 看截圖+完整數據後決定。
-
-    註: 原本這裡的第二個特徵是 infrared_detected(紅外線偵測),但前端
-    手機鏡頭實際上偵測不到真正的紅外線(討論過這個物理限制),所以改成
-    bluetooth_suspicious_detected,對應前端真正會產生的資料。
+    支援接收前端原始 List/Count 數據，並自動轉換為 Sigmoid 權重算分。
     """
+    # 1. 自動判斷無線裝置狀態
+    wifi_detected = wifi_camera_detected or bool(network_devices)
+    bt_detected = bluetooth_suspicious_detected or bool(bluetooth_devices)
+
+    # 2. 自動將高風險反光點數轉換為光學分數 (0.0 ~ 1.0)
+    # 邏輯：1 個高風險反光點給 0.5 分，2 個以上給 1.0 滿分
+    optical_glint_score = min(high_risk_glint_count * 0.5, 1.0)
+
+    # 3. 計算平均 Flicker Score (供 LLM 參考)
+    avg_flicker_score = 0.0
+    if glints and len(glints) > 0:
+        flicker_sum = sum(g.get("flickerScore", 0.0) for g in glints if isinstance(g, dict))
+        avg_flicker_score = round(flicker_sum / len(glints), 2)
+    elif high_risk_glint_count > 0:
+        avg_flicker_score = 8.5  # 預設高於門檻之參考值
+
+    # 4. 權重與偏置 (Sigmoid 邏輯)
     W_WIFI = 4.0
     W_BLUETOOTH = 3.5
     W_GLINT = 2.5
     BIAS = -2.5
 
-    wifi_score = 1.0 if wifi_camera_detected else 0.0
-    bluetooth_score = 1.0 if bluetooth_suspicious_detected else 0.0
+    wifi_score = 1.0 if wifi_detected else 0.0
+    bluetooth_score = 1.0 if bt_detected else 0.0
 
     raw_score = (
         (wifi_score * W_WIFI) +
@@ -67,7 +81,7 @@ def calculate_threat_score(
         BIAS
     )
 
-    multiplier, env_category = parse_environment_multiplier(environment_type)
+    multiplier, env_category = parse_environment_multiplier(environment_context)
     adjusted_raw_score = raw_score * multiplier
 
     probability = 1 / (1 + math.exp(-adjusted_raw_score))
@@ -80,44 +94,27 @@ def calculate_threat_score(
     else:
         risk_level = "LOW"
 
+    wireless_bonus = 0.0
+    if wifi_detected:
+        wireless_bonus += 20.0
+    if bt_detected:
+        wireless_bonus += 15.0
+
     return {
         "risk_percentage": risk_percentage,
         "risk_level": risk_level,
         "raw_score": round(adjusted_raw_score, 2),
-        "env_category": env_category
+        "env_category": env_category,
+        "avg_flicker_score": avg_flicker_score,
+        "wireless_bonus_applied": wireless_bonus
     }
 
 
-# ==========================================
-# 本地測試區塊
-# ==========================================
 if __name__ == "__main__":
-    print("--- 測試情境 1:「台北101 3樓女廁」(強烈反光 + 可疑WiFi) ---")
-    result1 = calculate_threat_score(
-        optical_glint_score=0.8,
-        wifi_camera_detected=True,
-        bluetooth_suspicious_detected=False,
-        environment_type="台北101 3樓女廁"
+    # 本地測試
+    res = calculate_threat_score(
+        environment_context="台北101 3樓女廁",
+        high_risk_glint_count=2,
+        wifi_camera_detected=True
     )
-    print(f"辨識分類: {result1['env_category']}")
-    print(f"風險機率: {result1['risk_percentage']}% | 等級: {result1['risk_level']}")
-
-    print("\n--- 測試情境 2:「錢櫃 KTV 302包廂」(微弱反光 + 無WiFi) ---")
-    result2 = calculate_threat_score(
-        optical_glint_score=0.4,
-        wifi_camera_detected=False,
-        bluetooth_suspicious_detected=False,
-        environment_type="錢櫃 KTV 302包廂"
-    )
-    print(f"辨識分類: {result2['env_category']}")
-    print(f"風險機率: {result2['risk_percentage']}% | 等級: {result2['risk_level']}")
-
-    print("\n--- 測試情境 3:「公司 4樓大會議室」(微弱反光) ---")
-    result3 = calculate_threat_score(
-        optical_glint_score=0.3,
-        wifi_camera_detected=False,
-        bluetooth_suspicious_detected=False,
-        environment_type="公司 4樓大會議室"
-    )
-    print(f"辨識分類: {result3['env_category']}")
-    print(f"風險機率: {result3['risk_percentage']}% | 等級: {result3['risk_level']}")
+    print("測試結果：", res)
