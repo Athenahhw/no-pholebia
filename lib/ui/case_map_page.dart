@@ -5,6 +5,11 @@ import '../models/risk_marker_data.dart';
 import '../services/location_service.dart'; // 👈 匯入 LocationService
 import 'scan_page.dart';
 import 'ai_assistant_page.dart';
+import 'dart:convert';
+import 'package:flutter/services.dart' show rootBundle;
+import '../risk/time_risk_service.dart'; // 👈 導入你的時間風險算式
+import '../report/report_model.dart';
+import '../report/report_dialog.dart';
 
 class CaseMapPage extends StatefulWidget {
   const CaseMapPage({super.key});
@@ -27,10 +32,17 @@ class _CaseMapPageState extends State<CaseMapPage> {
   RiskMarkerData? _activeRiskMarker;
   bool _showBottomCard = false;
 
+// 存放動態從 cases.json 產生的地圖標籤
+  List<Marker> _jsonCaseMarkers = [];
+
+// 存放使用者剛通報的即時地圖標籤
+  List<Marker> _userReportMarkers = [];
+
   @override
   void initState() {
     super.initState();
     _getUserLocation();
+    _loadCasesFromJson(); // 👈 頁面初始化時載入案件資料
   }
 
   /// 📍 獲取真實 GPS 座標並移動地圖
@@ -50,6 +62,123 @@ class _CaseMapPageState extends State<CaseMapPage> {
         _isLoadingLocation = false;
       });
     }
+  }
+
+  /// 讀取 assets/json/cases.json 並結合時間風險演算[cite: 4, 7]
+  Future<void> _loadCasesFromJson() async {
+    try {
+      final String jsonString = await rootBundle.loadString('assets/json/cases.json');
+      final List<dynamic> data = json.decode(jsonString);
+
+      List<Marker> loadedMarkers = [];
+
+      for (var item in data) {
+        final double lat = (item['latitude'] as num).toDouble();
+        final double lng = (item['longitude'] as num).toDouble();
+        final String title = item['title'] ?? '未命名案件';
+        final String location = item['location_name'] ?? '未知地點';
+        final String endDate = item['end_date'] ?? '2026-01-01';
+
+        // 💡 呼叫時間風險演算[cite: 4, 8]
+        final double riskWeight = TimeRiskService.calculateTimeRiskWeight(endDate);
+        final String riskLevel = TimeRiskService.getRiskLevelString(riskWeight);
+
+        // 根據風險等級設定光暈顏色
+        Color riskColor = Colors.red;
+        if (riskLevel == 'MEDIUM') {
+          riskColor = Colors.orange;
+        } else if (riskLevel == 'LOW') {
+          riskColor = Colors.amber;
+        }
+
+        loadedMarkers.add(
+          Marker(
+            point: LatLng(lat, lng),
+            width: 74,
+            height: 74,
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _showHintCard = false;
+                  // 點擊案件在地圖下方顯示精美卡片[cite: 2, 7]
+                  _activeRiskMarker = RiskMarkerData(
+                    position: LatLng(lat, lng),
+                    riskColor: riskColor,
+                    title: title,
+                    titleColor: riskColor,
+                    content: '地點：$location\n發生時間：$endDate\n風險加權值：${(riskWeight * 100).toInt()}% ($riskLevel)',
+                  );
+                  _showBottomCard = true;
+                });
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      riskColor.withOpacity(0.9),
+                      riskColor.withOpacity(0.1),
+                    ],
+                    stops: const [0.3, 1.0],
+                  ),
+                ),
+                child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 28),
+              ),
+            ),
+          ),
+        );
+      }
+
+      if (mounted) {
+        setState(() {
+          _jsonCaseMarkers = loadedMarkers;
+        });
+      }
+    } catch (e) {
+      print('載入 cases.json 失敗: $e');
+    }
+  }
+
+  /// 將使用者舉報的地點，動態轉為紫色警示地標加到地圖上[cite: 2, 5]
+  void _addUserReportToMap(UserReport report) {
+    final newMarker = Marker(
+      point: LatLng(report.latitude, report.longitude),
+      width: 74,
+      height: 74,
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _showHintCard = false;
+            // 點擊即時舉報地點時顯示的底欄資訊卡片[cite: 2, 7]
+            _activeRiskMarker = RiskMarkerData(
+              position: LatLng(report.latitude, report.longitude),
+              riskColor: Colors.deepPurple, // 使用紫色區隔即時通報點
+              title: '【使用者舉報】${report.title}',
+              titleColor: Colors.deepPurple,
+              content: '地點：${report.locationName}\n通報時間：${report.date}\n說明：${report.description}\n(狀態：待審核通報)',
+            );
+            _showBottomCard = true;
+          });
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(
+              colors: [
+                Colors.deepPurple.withOpacity(0.9),
+                Colors.deepPurple.withOpacity(0.1),
+              ],
+              stops: const [0.3, 1.0],
+            ),
+          ),
+          child: const Icon(Icons.report_problem_rounded, color: Colors.white, size: 28),
+        ),
+      ),
+    );
+
+    setState(() {
+      _userReportMarkers.add(newMarker);
+    });
   }
 
   @override
@@ -146,6 +275,8 @@ class _CaseMapPageState extends State<CaseMapPage> {
                       ),
                     );
                   }).toList(),
+                  ..._jsonCaseMarkers,
+                  ..._userReportMarkers,
                 ],
               ),
             ],
@@ -172,6 +303,28 @@ class _CaseMapPageState extends State<CaseMapPage> {
                       ),
                     )
                   : Icon(Icons.my_location, color: baseGreen),
+            ),
+          ),
+
+          Positioned(
+            right: 20,
+            bottom: 190,
+            child: FloatingActionButton.extended(
+              heroTag: 'report_btn',
+              backgroundColor: Colors.redAccent,
+              elevation: 4,
+              icon: const Icon(Icons.add_location_alt_rounded, color: Colors.white),
+              label: const Text('通報偷拍點', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              onPressed: () async {
+                final result = await showDialog<UserReport>(
+                  context: context,
+                  builder: (ctx) => const ReportCaseDialog(),
+                );
+
+                if (result != null) {
+                  _addUserReportToMap(result);
+                }
+              },
             ),
           ),
 
