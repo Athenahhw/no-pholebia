@@ -11,6 +11,7 @@ import 'dart:convert';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
+import 'package:geolocator/geolocator.dart';
 
 import 'camera_service.dart';
 import 'detection_backend_client.dart';
@@ -181,7 +182,7 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
   Future<void> _finishScan() async {
     if (_isFinishing) return;
     setState(() => _isFinishing = true);
-
+    final (lat, lng) = await _getCurrentLocation();
     _objectDetectTimer?.cancel();
     await _cameraService.stopImageStream();
 
@@ -238,6 +239,8 @@ class _ScanScreenState extends State<ScanScreen> with SingleTickerProviderStateM
       bluetoothDevices: bluetoothDevices,
       scanStartedAt: _scanStartedAt ?? DateTime.now(),
       scanEndedAt: DateTime.now(),
+      latitude: lat,
+      longitude: lng,
     );
 
     final backendResult = await _backendClient.submitScan(summary);
@@ -486,5 +489,25 @@ class _DebugResultScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+Future<(double?, double?)> _getCurrentLocation() async {
+  try {
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return (null, null);
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return (null, null);
+    }
+    if (permission == LocationPermission.deniedForever) return (null, null);
+
+    final position = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+    );
+    return (position.latitude, position.longitude);
+  } catch (_) {
+    return (null, null); // 定位失敗不影響其他偵測邏輯繼續運作
   }
 }

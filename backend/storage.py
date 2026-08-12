@@ -14,7 +14,6 @@ def _get_connection():
 
 
 def init_db():
-    """啟動時建表,如果已存在就跳過。"""
     conn = _get_connection()
     conn.execute(
         """
@@ -29,6 +28,8 @@ def init_db():
             network_device_count INTEGER,
             bluetooth_device_count INTEGER,
             has_screenshot INTEGER,
+            latitude REAL,
+            longitude REAL,
             review_status TEXT NOT NULL DEFAULT 'pending',
             reviewed_at TEXT,
             reviewed_note TEXT,
@@ -37,28 +38,29 @@ def init_db():
         )
         """
     )
-    # 相容舊資料庫:如果是從舊版升級上來,沒有 review_status 欄位的話補上
     existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(scan_records)")}
-    if "review_status" not in existing_cols:
-        conn.execute("ALTER TABLE scan_records ADD COLUMN review_status TEXT NOT NULL DEFAULT 'pending'")
-    if "reviewed_at" not in existing_cols:
-        conn.execute("ALTER TABLE scan_records ADD COLUMN reviewed_at TEXT")
-    if "reviewed_note" not in existing_cols:
-        conn.execute("ALTER TABLE scan_records ADD COLUMN reviewed_note TEXT")
+    for col, col_type in [
+        ("review_status", "TEXT NOT NULL DEFAULT 'pending'"),
+        ("reviewed_at", "TEXT"),
+        ("reviewed_note", "TEXT"),
+        ("latitude", "REAL"),
+        ("longitude", "REAL"),
+    ]:
+        if col not in existing_cols:
+            conn.execute(f"ALTER TABLE scan_records ADD COLUMN {col} {col_type}")
     conn.commit()
     conn.close()
 
 
 def save_record(payload, result: dict) -> int:
-    """
-    儲存一筆掃描紀錄,狀態預設為 'pending'(待審核)。
-    **不會**自動進入案件地圖,要等 approve_record() 之後才算數。
-    """
     conn = _get_connection()
 
     request_dict = payload.model_dump(by_alias=True)
     has_screenshot = bool(request_dict.get("screenshotBase64"))
     request_dict["screenshotBase64"] = None if not has_screenshot else "(已省略,未儲存於資料庫)"
+
+    latitude = getattr(payload, "latitude", None)
+    longitude = getattr(payload, "longitude", None)
 
     cursor = conn.execute(
         """
@@ -66,8 +68,9 @@ def save_record(payload, result: dict) -> int:
             created_at, environment_context, risk_level, risk_percentage,
             total_glint_count, high_risk_glint_count,
             network_device_count, bluetooth_device_count,
-            has_screenshot, review_status, raw_request_json, raw_response_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+            has_screenshot, latitude, longitude, review_status,
+            raw_request_json, raw_response_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
         """,
         (
             datetime.now(timezone.utc).isoformat(),
@@ -79,6 +82,8 @@ def save_record(payload, result: dict) -> int:
             len(payload.network_devices),
             len(payload.bluetooth_devices),
             1 if has_screenshot else 0,
+            latitude,
+            longitude,
             json.dumps(request_dict, ensure_ascii=False),
             json.dumps(result, ensure_ascii=False),
         ),
@@ -91,14 +96,13 @@ def save_record(payload, result: dict) -> int:
 
 def list_records(limit: int = 50, offset: int = 0, risk_level: Optional[str] = None,
                   review_status: Optional[str] = None):
-    """列出紀錄摘要。review_status 可篩選 'pending'/'approved'/'rejected'。"""
     conn = _get_connection()
 
     query = """
         SELECT id, created_at, environment_context, risk_level, risk_percentage,
                total_glint_count, high_risk_glint_count,
                network_device_count, bluetooth_device_count, has_screenshot,
-               review_status, reviewed_at, reviewed_note
+               latitude, longitude, review_status, reviewed_at, reviewed_note
         FROM scan_records
     """
     conditions = []
@@ -121,7 +125,6 @@ def list_records(limit: int = 50, offset: int = 0, risk_level: Optional[str] = N
 
 
 def get_record(record_id: int):
-    """查詢單筆完整紀錄,含原始request/response JSON,給人工審核用。"""
     conn = _get_connection()
     row = conn.execute("SELECT * FROM scan_records WHERE id = ?", (record_id,)).fetchone()
     conn.close()
@@ -136,10 +139,6 @@ def get_record(record_id: int):
 
 
 def review_record(record_id: int, decision: str, note: Optional[str] = None) -> bool:
-    """
-    人工審核一筆紀錄。decision 必須是 'approved' 或 'rejected'。
-    回傳 True 代表更新成功,False 代表找不到這筆紀錄。
-    """
     if decision not in ("approved", "rejected"):
         raise ValueError("decision 必須是 'approved' 或 'rejected'")
 
@@ -160,14 +159,19 @@ def review_record(record_id: int, decision: str, note: Optional[str] = None) -> 
 
 def list_approved_for_map():
     """
-    取得所有『已核准』的紀錄,格式對應案件地圖需要的資料。
-    (實際欄位名稱等對齊 cases.json 格式後再調整)
+    取得所有已核准的紀錄,輸出格式對齊 assets/json/cases.json 的 schema:
+    id / title / location_name / latitude / longitude / start_date / end_date /
+    category / source_type / verified
+
+    註: latitude/longitude 如果前端沒有成功取得GPS(定位失敗/拒絕權限),
+    這裡會是 None,案件地圖那邊要處理這種資料不完整、無法定位的情況
+    (例如不畫在地圖上,或畫在一個「未知位置」的分類清單裡)。
     """
     conn = _get_connection()
     rows = conn.execute(
         """
         SELECT id, created_at, environment_context, risk_level, risk_percentage,
-               raw_request_json, raw_response_json
+               latitude, longitude
         FROM scan_records
         WHERE review_status = 'approved'
         ORDER BY id DESC
@@ -175,17 +179,29 @@ def list_approved_for_map():
     ).fetchall()
     conn.close()
 
-    results = []
+    cases = []
     for r in rows:
-        record = dict(r)
-        record["raw_request"] = json.loads(record.pop("raw_request_json"))
-        record["raw_response"] = json.loads(record.pop("raw_response_json"))
-        results.append(record)
-    return results
+        row = dict(r)
+        date_str = row["created_at"][:10] if row["created_at"] else None
+        risk_label = {"high": "高風險", "medium": "中風險", "low": "低風險"}.get(
+            (row["risk_level"] or "").lower(), "未知風險"
+        )
+        cases.append({
+            "id": row["id"],
+            "title": f"{row['environment_context'] or '未知地點'} 疑似針孔攝影機案件({risk_label})",
+            "location_name": row["environment_context"] or "地點未提供",
+            "latitude": row["latitude"],
+            "longitude": row["longitude"],
+            "start_date": date_str,
+            "end_date": date_str,
+            "category": "App使用者回報",
+            "source_type": "APP_SCAN",
+            "verified": True,  # 一定是true,因為只有審核核准過的才會出現在這裡
+        })
+    return cases
 
 
 def get_stats():
-    """簡易統計,給後台監控整體App運作狀況用。"""
     conn = _get_connection()
 
     total = conn.execute("SELECT COUNT(*) AS c FROM scan_records").fetchone()["c"]

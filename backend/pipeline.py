@@ -29,11 +29,10 @@ def run_anti_pinhole_inference(payload) -> dict:
       3. WiFi/藍牙偵測結果只能當加分項,沒偵測到不代表安全(這點在
          prompt裡也提醒LLM,不要誤用成減分依據)。
 
-    ⚠️ TODO(重要): user_lat / user_lng 目前前端沒有實際蒐集GPS座標,
-    這裡先用 payload 上的預設值(如果前端之後加上geolocator套件,
-    在 AnalyzeRequest 補上 userLat/userLng 欄位即可直接接上)。
-    在GPS真的接上之前,police_cheat_sheet 裡的座標是不準確的佔位值,
-    這件事要讓團隊知道,不要在demo時誤以為座標是真的。
+    GPS座標(user_lat/user_lng)現在讀取前端實際定位結果(payload.latitude/
+    payload.longitude)。前端定位失敗或使用者拒絕權限時會是None,這裡
+    用預設值(台北101座標)當保底,避免police_cheat_sheet出現None字樣,
+    但這種情況下報案小抄的座標是不準確的,只是避免顯示錯誤,不是真的位置。
     """
     print("正在接收前端傳入的完整掃描資料...")
 
@@ -56,9 +55,9 @@ def run_anti_pinhole_inference(payload) -> dict:
     print("正在調用 Gemini 進行多模態語意推理(含截圖分析)...")
     suspicious_item_summary = _summarize_suspicious_item(payload)
 
-    # TODO: 換成前端真實GPS座標(目前前端未蒐集,見上方說明)
-    user_lat = getattr(payload, "user_lat", 25.0501)
-    user_lng = getattr(payload, "user_lng", 121.5132)
+    # 讀取前端實際定位結果,定位失敗時用台北101座標當保底(避免None顯示錯誤)
+    user_lat = payload.latitude if payload.latitude is not None else 25.0501
+    user_lng = payload.longitude if payload.longitude is not None else 121.5132
 
     llm_result = generate_safety_plan_with_prompt(
         environment_type=payload.environment_context or "未提供",

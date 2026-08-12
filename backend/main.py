@@ -71,6 +71,8 @@ class AnalyzeRequest(BaseModel):
     screenshot_base64: Optional[str] = Field(None, alias="screenshotBase64")
     network_devices: List[NetworkDevice] = Field(default_factory=list, alias="networkDevices")
     bluetooth_devices: List[BluetoothDeviceInfo] = Field(default_factory=list, alias="bluetoothDevices")
+    latitude: Optional[float] = Field(None, alias="latitude")
+    longitude: Optional[float] = Field(None, alias="longitude")
     scan_started_at: Optional[str] = Field(None, alias="scanStartedAt")
     scan_ended_at: Optional[str] = Field(None, alias="scanEndedAt")
     scan_duration_ms: Optional[int] = Field(None, alias="scanDurationMs")
