@@ -50,8 +50,7 @@ def generate_safety_plan_with_prompt(
     2. "risk_percentage": 數字 (0 ~ 100)
     3. "risk_assessment_summary": 【風險評估】詳細分析為何此環境與物品有此風險，說明反光與無線訊號特徵。
     4. "police_cheat_sheet": 【報案敘述】50 字以內，方便使用者直接唸給警察聽。需提及座標 (lat, lng) 與具體物品位置。
-    5. "ai_assistant_summary": 【AI 助理查詢結果】給使用者的白話解答總結與防護情境說明。
-    6. "action_cards": 陣列，包含 3 點具體實體處置建議（例如遮蔽、檢查）。
+    5. "action_cards": 陣列，包含 3 點具體實體處置建議（例如遮蔽、檢查）。
     """
 
     prompt_content = f"""
