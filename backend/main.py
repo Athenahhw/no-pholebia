@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ConfigDict
@@ -8,10 +9,19 @@ from typing import List, Optional
 from pipeline import run_anti_pinhole_inference
 import storage
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 服務啟動時初始化資料庫
+    storage.init_db()
+    yield
+
+
 app = FastAPI(
     title="隱私防護與安全評估 API",
     description="結合多模態感測數據與 Google Gemini 雲端 AI 語意推理之 API 服務",
     version="2.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -83,11 +93,6 @@ class ReviewDecision(BaseModel):
     note: Optional[str] = Field(None, description="審核備註,選填")
 
 
-@app.on_event("startup")
-def on_startup():
-    storage.init_db()
-
-
 @app.get("/")
 def read_root():
     return {
@@ -100,7 +105,7 @@ def read_root():
 def analyze_privacy_risk(payload: AnalyzeRequest):
     """
     主要分析端點。收到的每一筆案件狀態都是 'pending'(待審核),
-    **不會自動出現在案件地圖上**,要等後台人工審核核准後才算數。
+    不會自動出現在案件地圖上,要等後台人工審核核准後才算數。
     """
     try:
         final_result = run_anti_pinhole_inference(payload)
@@ -110,6 +115,7 @@ def analyze_privacy_risk(payload: AnalyzeRequest):
         return final_result
 
     except Exception as e:
+        print(f" 伺服器運算異常: {str(e)}")
         raise HTTPException(status_code=500, detail=f"伺服器運算異常: {str(e)}")
 
 
@@ -141,7 +147,7 @@ def get_record(record_id: int):
 def review_record(record_id: int, payload: ReviewDecision):
     """
     人工審核一筆案件。decision 傳 'approved' 才會讓這筆案件之後出現在
-    案件地圖上(見 /api/v1/records/approved-for-map),'rejected' 就永遠不會。
+    案件地圖上,'rejected' 就永遠不會。
     """
     if payload.decision not in ("approved", "rejected"):
         raise HTTPException(status_code=400, detail="decision 必須是 'approved' 或 'rejected'")
@@ -155,10 +161,7 @@ def review_record(record_id: int, payload: ReviewDecision):
 
 @app.get("/api/v1/records/approved-for-map")
 def get_approved_for_map():
-    """
-    取得所有已核准的案件,格式給案件地圖功能使用。
-    (實際欄位對應 assets/json/cases.json 格式,待確認後調整)
-    """
+    """取得所有已核准的案件,格式給案件地圖功能使用。"""
     return {"cases": storage.list_approved_for_map()}
 
 

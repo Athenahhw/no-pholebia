@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'dart:math' as math;
+import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+// 👈 載入剛才建立的 Services
+import '../services/location_service.dart';
+import '../services/police_service.dart';
 
 enum RiskLevel { low, medium, high }
 
@@ -28,12 +34,21 @@ class _ResultPageState extends State<ResultPage> {
   // 0 = 初始(生成報案敘述), 1 = 載入中(顯示 Loader 3秒), 2 = 已完成(查看報案敘述)
   int _reportState = 0;
 
+  // 📍 儲存目前抓取到的最近警察局資料
+  PoliceStation? _nearestPolice;
+  bool _isLoadingPolice = false;
+
   @override
   void initState() {
     super.initState();
     _currentRisk = widget.riskLevel;
     _currentScore = widget.score;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _updateLineY());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateLineY();
+      if (_currentRisk == RiskLevel.high) {
+        _fetchNearestPolice(); // 進入如果是高風險，立刻抓警局
+      }
+    });
   }
 
   void _updateLineY() {
@@ -46,6 +61,42 @@ class _ResultPageState extends State<ResultPage> {
     }
   }
 
+  /// 📍 呼叫 LocationService 與 PoliceService 抓取最近警局
+  Future<void> _fetchNearestPolice() async {
+    if (_isLoadingPolice) return;
+    setState(() {
+      _isLoadingPolice = true;
+    });
+
+    try {
+      // 1. 抓取手機目前 GPS 座標
+      LatLng? userPos = await LocationService.getCurrentLocation();
+
+      // 如果抓不到 GPS（例如測試器中或未給權限），給予預設台北市立圖書館/大安區座標
+      userPos ??= const LatLng(25.0381, 121.5401);
+
+      // 2. 算距離並找出最近的 1 間警局
+      List<PoliceStation> nearestList = await PoliceService.getNearestStations(
+        userLocation: userPos,
+        count: 1,
+      );
+
+      if (nearestList.isNotEmpty && mounted) {
+        setState(() {
+          _nearestPolice = nearestList.first;
+        });
+      }
+    } catch (e) {
+      print('抓取最近警局失敗: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingPolice = false;
+        });
+      }
+    }
+  }
+
   void _toggleNextRisk() {
     setState(() {
       if (_currentRisk == RiskLevel.low) {
@@ -54,6 +105,7 @@ class _ResultPageState extends State<ResultPage> {
       } else if (_currentRisk == RiskLevel.medium) {
         _currentRisk = RiskLevel.high;
         _currentScore = 88;
+        _fetchNearestPolice(); // 切到高風險時觸發搜尋警局
       } else {
         _currentRisk = RiskLevel.low;
         _currentScore = 4;
@@ -61,6 +113,19 @@ class _ResultPageState extends State<ResultPage> {
       _reportState = 0;
       WidgetsBinding.instance.addPostFrameCallback((_) => _updateLineY());
     });
+  }
+
+  /// 📞 點擊電話號碼撥號
+  Future<void> _makePhoneCall(String phoneNumber) async {
+    final Uri launchUri = Uri(
+      scheme: 'tel',
+      path: phoneNumber.replaceAll('-', ''),
+    );
+    if (await canLaunchUrl(launchUri)) {
+      await launchUrl(launchUri);
+    } else {
+      print('無法開啟撥號介面: $phoneNumber');
+    }
   }
 
   void _handleReportAction() {
@@ -81,7 +146,7 @@ class _ResultPageState extends State<ResultPage> {
     }
   }
 
-  // 👈 報案敘述 Bottom Sheet
+  // 報案敘述 Bottom Sheet
   void _showReportBottomSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -89,16 +154,15 @@ class _ResultPageState extends State<ResultPage> {
       backgroundColor: Colors.transparent,
       builder: (context) {
         return Padding(
-          // 👈 卡片左右留有 20px 間隙
           padding: const EdgeInsets.symmetric(horizontal: 20.0),
           child: DraggableScrollableSheet(
             initialChildSize: 0.65,
             minChildSize: 0.3,
-            maxChildSize: 1.0, // 👈 可向上滑動覆蓋至螢幕頂部
+            maxChildSize: 1.0,
             builder: (context, scrollController) {
               return Container(
                 decoration: const BoxDecoration(
-                  color: Color(0xFFF5F5F5), // 底色 F5F5F5
+                  color: Color(0xFFF5F5F5),
                   borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                   boxShadow: [
                     BoxShadow(
@@ -111,7 +175,6 @@ class _ResultPageState extends State<ResultPage> {
                 child: Column(
                   children: [
                     const SizedBox(height: 12),
-                    // 頂部灰色拉桿
                     Container(
                       width: 40,
                       height: 5,
@@ -120,17 +183,13 @@ class _ResultPageState extends State<ResultPage> {
                         borderRadius: BorderRadius.circular(2.5),
                       ),
                     ),
-
                     const SizedBox(height: 20),
-
-                    // 👈 標題與內文對齊區塊 (Padding 24.0)
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 24.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // 標題列：Info.png + 綠色字 (#395938, 20pt)
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
@@ -144,18 +203,15 @@ class _ResultPageState extends State<ResultPage> {
                                   child: Text(
                                     '請參考此報案敘述提供警方訊息',
                                     style: TextStyle(
-                                      fontSize: 20, // 👈 20pt
-                                      color: Color(0xFF395938), // 👈 #395938
+                                      fontSize: 20,
+                                      color: Color(0xFF395938),
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
                                 ),
                               ],
                             ),
-
                             const SizedBox(height: 16),
-
-                            // 內文 (與標題對齊, #49454F, 20pt, 下方漸隱)
                             Expanded(
                               child: ShaderMask(
                                 shaderCallback: (Rect bounds) {
@@ -173,15 +229,16 @@ class _ResultPageState extends State<ResultPage> {
                                 blendMode: BlendMode.dstIn,
                                 child: SingleChildScrollView(
                                   controller: scrollController,
-                                  child: const Text(
+                                  child: Text(
                                     '你好，我要報案。\n'
                                     '我現在在國立臺北教育大學內，發現疑似遭人安裝針孔攝影機。\n\n'
                                     '・ 【具體位置】位於 [請補充實際場館與樓層等地點細節]。\n'
                                     '・ 【異常物體】門板上的一面常規塑膠掛鉤。\n'
-                                    '・ 【異常細節】該掛鉤外殼雖為一般塑料，但上面的固定螺絲有明顯異常。其中一顆十字螺絲的中心深度與光線吸收率遠高於正常金屬螺絲，且經檢測含有異常訊號。',
-                                    style: TextStyle(
-                                      fontSize: 20, // 👈 20pt
-                                      color: Color(0xFF49454F), // 👈 #49454F
+                                    '・ 【異常細節】該掛鉤外殼雖為一般塑料，但上面的固定螺絲有明顯異常。其中一顆十字螺絲的中心深度與光線吸收率遠高於正常金屬螺絲，且經檢測含有異常訊號。\n'
+                                    '・ 【推薦報案單位】${_nearestPolice?.name ?? '臺北市政府警察局大安分局敦化南路派出所'} (${_nearestPolice?.phone ?? '02-2772-0400'})',
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      color: Color(0xFF49454F),
                                       height: 1.45,
                                     ),
                                   ),
@@ -217,7 +274,7 @@ class _ResultPageState extends State<ResultPage> {
         ? 'assets/images/Check.png'
         : (isMedium ? 'assets/images/Alert triangle.png' : 'assets/images/Alert circle.png');
 
-    const Color textContentColor = Color(0xFF49454F); // 👈 內文全用 49454F
+    const Color textContentColor = Color(0xFF49454F);
     const double contentWidth = 280.0;
 
     return Scaffold(
@@ -245,7 +302,6 @@ class _ResultPageState extends State<ResultPage> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         const Spacer(flex: 2),
-
                         SizedBox(
                           width: contentWidth,
                           child: GestureDetector(
@@ -262,7 +318,7 @@ class _ResultPageState extends State<ResultPage> {
                                       style: TextStyle(
                                         fontSize: 32,
                                         color: themeColor,
-                                        fontWeight: FontWeight.w900, // 👈 標題更粗
+                                        fontWeight: FontWeight.w900,
                                         height: 1.0,
                                       ),
                                     ),
@@ -280,9 +336,7 @@ class _ResultPageState extends State<ResultPage> {
                             ),
                           ),
                         ),
-
                         const SizedBox(height: 16),
-
                         SizedBox(
                           width: contentWidth,
                           height: 140,
@@ -311,9 +365,7 @@ class _ResultPageState extends State<ResultPage> {
                             ],
                           ),
                         ),
-
                         const SizedBox(height: 24),
-
                         SizedBox(
                           width: contentWidth,
                           child: Column(
@@ -327,7 +379,6 @@ class _ResultPageState extends State<ResultPage> {
                             ],
                           ),
                         ),
-
                         const Spacer(flex: 3),
                         const SizedBox(height: 80),
                       ],
@@ -357,7 +408,6 @@ class _ResultPageState extends State<ResultPage> {
                           child: Column(
                             children: [
                               const SizedBox(height: 60),
-
                               SizedBox(
                                 width: contentWidth,
                                 child: GestureDetector(
@@ -374,7 +424,7 @@ class _ResultPageState extends State<ResultPage> {
                                             style: TextStyle(
                                               fontSize: 32,
                                               color: themeColor,
-                                              fontWeight: FontWeight.w900, // 👈 標題更粗
+                                              fontWeight: FontWeight.w900,
                                               height: 1.0,
                                             ),
                                           ),
@@ -392,9 +442,7 @@ class _ResultPageState extends State<ResultPage> {
                                   ),
                                 ),
                               ),
-
                               const SizedBox(height: 16),
-
                               SizedBox(
                                 width: contentWidth,
                                 height: 140,
@@ -423,14 +471,11 @@ class _ResultPageState extends State<ResultPage> {
                                   ],
                                 ),
                               ),
-
                               const SizedBox(height: 20),
-
                               SizedBox(
                                 width: contentWidth,
                                 child: _buildHighRiskContent(textContentColor),
                               ),
-
                               const SizedBox(height: 140),
                             ],
                           ),
@@ -451,7 +496,7 @@ class _ResultPageState extends State<ResultPage> {
                         width: 120,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF395938), // 👈 #395938 綠色
+                          color: const Color(0xFF395938),
                           borderRadius: BorderRadius.circular(22),
                         ),
                         child: Row(
@@ -474,17 +519,24 @@ class _ResultPageState extends State<ResultPage> {
     );
   }
 
-  // 高風險詳細內容
+  // 高風險詳細內容 (動態渲染警局與電話)
   Widget _buildHighRiskContent(Color textColor) {
+    // 📍 預設警局備案（抓取中或無資料時使用）
+    final String policeName = _nearestPolice?.name ?? '臺北市政府警察局大安分局敦化南路派出所';
+    final String policePhone = _nearestPolice?.phone ?? '02-2772-0400';
+    final String policeDistance = _nearestPolice?.formattedDistance.isNotEmpty == true 
+        ? ' (距離 ${_nearestPolice!.formattedDistance})' 
+        : '';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           '偵測到非對稱的幾何小黑孔與微光特徵，該掛鉤外殼雖為常規塑料，但其中一顆十字螺絲的中心深度與光線吸收率，遠高於正常金屬螺絲，疑似為「螺絲型微型鏡頭」之偽裝。\n綜合評估危險指數：88%\n\n請勿慌張或破壞犯罪現場，使用衛生紙或衣物遮蔽該處即可。',
-          style: TextStyle(fontSize: 20, color: textColor, height: 1.45), // 👈 20pt
+          style: TextStyle(fontSize: 20, color: textColor, height: 1.45),
         ),
         const SizedBox(height: 20),
-        
+
         // 證據圖
         Container(
           width: double.infinity,
@@ -498,19 +550,19 @@ class _ResultPageState extends State<ResultPage> {
           ),
         ),
         const SizedBox(height: 25),
-        
-        // 👈 PDF 下載區：Download.png 精確貼在「檔」字右側
+
+        // PDF 下載區
         RichText(
           text: TextSpan(
             children: [
               TextSpan(
                 text: '已為您生成偵測報告，點按可下載PDF檔 ',
-                style: TextStyle(fontSize: 20, color: textColor, height: 1.4), // 👈 20pt
+                style: TextStyle(fontSize: 20, color: textColor, height: 1.4),
               ),
               WidgetSpan(
                 alignment: PlaceholderAlignment.middle,
                 child: Image.asset(
-                  'assets/images/Download.png', // 👈 Download.png 正好接在檔字右邊
+                  'assets/images/Download.png',
                   width: 20,
                   height: 20,
                 ),
@@ -520,15 +572,25 @@ class _ResultPageState extends State<ResultPage> {
         ),
 
         const SizedBox(height: 20),
-        
-        // 警局與電話
-        Text('附近有台北市政府警察局大安分局敦化南路派出所，您可以考慮報案。\n電話：', style: TextStyle(fontSize: 20, color: textColor)), // 👈 20pt
+
+        // 📍 警局與電話（動態渲染）
+        Text(
+          '附近有 $policeName$policeDistance，您可以考慮報案。\n電話：',
+          style: TextStyle(fontSize: 20, color: textColor),
+        ),
         GestureDetector(
-          onTap: () {},
-          child: const Text('02-2772-0400', style: TextStyle(fontSize: 20, color: Colors.blue, decoration: TextDecoration.underline)), // 👈 20pt
+          onTap: () => _makePhoneCall(policePhone),
+          child: Text(
+            policePhone,
+            style: const TextStyle(
+              fontSize: 20,
+              color: Colors.blue,
+              decoration: TextDecoration.underline,
+            ),
+          ),
         ),
         const SizedBox(height: 30),
-        
+
         // 報案按鈕
         Center(
           child: GestureDetector(
@@ -536,7 +598,7 @@ class _ResultPageState extends State<ResultPage> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               decoration: BoxDecoration(
-                color: const Color(0xFF395938), // 👈 #395938
+                color: const Color(0xFF395938),
                 borderRadius: BorderRadius.circular(24),
               ),
               child: Row(
@@ -621,17 +683,39 @@ class UniformGaugePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height - 10);
-    final double radius = math.min(size.width / 2, size.height) - 10;
-    const double strokeWidth = 18.0;
+    final center = Offset(size.width * 0.5, size.height);
+    final radius = math.min(size.width * 0.5, size.height) - 10;
 
-    canvas.drawArc(Rect.fromCircle(center: center, radius: radius), math.pi, math.pi, false,
-        Paint()..color = color.withOpacity(0.15)..style = PaintingStyle.stroke..strokeWidth = strokeWidth);
+    final basePaint = Paint()
+      ..color = color.withOpacity(0.2)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 12
+      ..strokeCap = StrokeCap.round;
 
-    canvas.drawArc(Rect.fromCircle(center: center, radius: radius), math.pi, (score / 100) * math.pi, false,
-        Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = strokeWidth);
+    final progressPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 12
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      math.pi,
+      math.pi,
+      false,
+      basePaint,
+    );
+
+    final double sweepAngle = math.pi * (score / 100).clamp(0.0, 1.0);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      math.pi,
+      sweepAngle,
+      false,
+      progressPaint,
+    );
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(UniformGaugePainter oldDelegate) => oldDelegate.score != score || oldDelegate.color != color;
 }

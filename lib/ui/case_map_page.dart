@@ -1,45 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:geolocator/geolocator.dart';
 import '../models/risk_marker_data.dart';
+import '../services/location_service.dart'; // 👈 匯入 LocationService
 import 'scan_page.dart';
 import 'ai_assistant_page.dart';
-
-// 👈 獲取手機當前 GPS 位置的非同步函式
-Future<LatLng?> _determinePosition() async {
-  bool serviceEnabled;
-  LocationPermission permission;
-
-  // 1. 檢查手機 GPS 功能是否開啟
-  serviceEnabled = await Geolocator.isLocationServiceEnabled();
-  if (!serviceEnabled) {
-    // 手機 GPS 未開啟，可引導使用者開啓
-    return null;
-  }
-
-  // 2. 檢查權限狀態
-  permission = await Geolocator.checkPermission();
-  if (permission == LocationPermission.denied) {
-    // 向使用者請求權限
-    permission = await Geolocator.requestPermission();
-    if (permission == LocationPermission.denied) {
-      return null;
-    }
-  }
-
-  if (permission == LocationPermission.deniedForever) {
-    // 使用者永久拒絕授權，需手動到手機設定開啟
-    return null;
-  }
-
-  // 3. 取得當前真實座標 (設定高精確度)
-  Position position = await Geolocator.getCurrentPosition(
-    desiredAccuracy: LocationAccuracy.high,
-  );
-
-  return LatLng(position.latitude, position.longitude);
-}
+import 'dart:convert';
+import 'package:flutter/services.dart' show rootBundle;
+import '../risk/time_risk_service.dart'; // 👈 導入你的時間風險算式
+import '../report/report_model.dart';
+import '../report/report_dialog.dart';
 
 class CaseMapPage extends StatefulWidget {
   const CaseMapPage({super.key});
@@ -49,39 +19,178 @@ class CaseMapPage extends StatefulWidget {
 }
 
 class _CaseMapPageState extends State<CaseMapPage> {
-  LatLng _currentPosition = const LatLng(25.0245, 121.5410); // 預設給一個座標
+  // 地圖控制器，用來動態移動地圖視角
+  final MapController _mapController = MapController();
 
-  @override
-  void initState() {
-    super.initState();
-    _getUserLocation();
-  }
+  // 預設位置 (國北教大附近)，抓到 GPS 後會自動更新
+  LatLng _currentPosition = const LatLng(25.0263, 121.5435);
+  bool _isLoadingLocation = true;
 
-  Future<void> _getUserLocation() async {
-    LatLng? userLatLng = await _determinePosition();
-    if (userLatLng != null) {
-      setState(() {
-        _currentPosition = userLatLng; // 👈 更新為手機實體 GPS 座標
-      });
-    }
-  }
   final Color baseGreen = const Color(0xFF395938);
 
   bool _showHintCard = true;
   RiskMarkerData? _activeRiskMarker;
   bool _showBottomCard = false;
 
-  final LatLng _ntuePosition = const LatLng(25.0263, 121.5435);
+// 存放動態從 cases.json 產生的地圖標籤
+  List<Marker> _jsonCaseMarkers = [];
+
+// 存放使用者剛通報的即時地圖標籤
+  List<Marker> _userReportMarkers = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _getUserLocation();
+    _loadCasesFromJson(); // 👈 頁面初始化時載入案件資料
+  }
+
+  /// 📍 獲取真實 GPS 座標並移動地圖
+  Future<void> _getUserLocation() async {
+    LatLng? userLatLng = await LocationService.getCurrentLocation();
+    
+    if (userLatLng != null && mounted) {
+      setState(() {
+        _currentPosition = userLatLng; // 👈 更新使用者的真實座標
+        _isLoadingLocation = false;
+      });
+
+      // 將地圖中心平滑移動至使用者當前位置
+      _mapController.move(_currentPosition, 16.0);
+    } else if (mounted) {
+      setState(() {
+        _isLoadingLocation = false;
+      });
+    }
+  }
+
+  /// 讀取 assets/json/cases.json 並結合時間風險演算[cite: 4, 7]
+  Future<void> _loadCasesFromJson() async {
+    try {
+      final String jsonString = await rootBundle.loadString('assets/json/cases.json');
+      final List<dynamic> data = json.decode(jsonString);
+
+      List<Marker> loadedMarkers = [];
+
+      for (var item in data) {
+        final double lat = (item['latitude'] as num).toDouble();
+        final double lng = (item['longitude'] as num).toDouble();
+        final String title = item['title'] ?? '未命名案件';
+        final String location = item['location_name'] ?? '未知地點';
+        final String endDate = item['end_date'] ?? '2026-01-01';
+
+        // 💡 呼叫時間風險演算[cite: 4, 8]
+        final double riskWeight = TimeRiskService.calculateTimeRiskWeight(endDate);
+        final String riskLevel = TimeRiskService.getRiskLevelString(riskWeight);
+
+        // 根據風險等級設定光暈顏色
+        Color riskColor = Colors.red;
+        if (riskLevel == 'MEDIUM') {
+          riskColor = Colors.orange;
+        } else if (riskLevel == 'LOW') {
+          riskColor = Colors.amber;
+        }
+
+        loadedMarkers.add(
+          Marker(
+            point: LatLng(lat, lng),
+            width: 74,
+            height: 74,
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _showHintCard = false;
+                  // 點擊案件在地圖下方顯示精美卡片[cite: 2, 7]
+                  _activeRiskMarker = RiskMarkerData(
+                    position: LatLng(lat, lng),
+                    riskColor: riskColor,
+                    title: title,
+                    titleColor: riskColor,
+                    content: '地點：$location\n發生時間：$endDate\n風險加權值：${(riskWeight * 100).toInt()}% ($riskLevel)',
+                  );
+                  _showBottomCard = true;
+                });
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      riskColor.withOpacity(0.9),
+                      riskColor.withOpacity(0.1),
+                    ],
+                    stops: const [0.3, 1.0],
+                  ),
+                ),
+                child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 28),
+              ),
+            ),
+          ),
+        );
+      }
+
+      if (mounted) {
+        setState(() {
+          _jsonCaseMarkers = loadedMarkers;
+        });
+      }
+    } catch (e) {
+      print('載入 cases.json 失敗: $e');
+    }
+  }
+
+  /// 將使用者舉報的地點，動態轉為紫色警示地標加到地圖上[cite: 2, 5]
+  void _addUserReportToMap(UserReport report) {
+    final newMarker = Marker(
+      point: LatLng(report.latitude, report.longitude),
+      width: 74,
+      height: 74,
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _showHintCard = false;
+            // 點擊即時舉報地點時顯示的底欄資訊卡片[cite: 2, 7]
+            _activeRiskMarker = RiskMarkerData(
+              position: LatLng(report.latitude, report.longitude),
+              riskColor: Colors.deepPurple, // 使用紫色區隔即時通報點
+              title: '【使用者舉報】${report.title}',
+              titleColor: Colors.deepPurple,
+              content: '地點：${report.locationName}\n通報時間：${report.date}\n說明：${report.description}\n(狀態：待審核通報)',
+            );
+            _showBottomCard = true;
+          });
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(
+              colors: [
+                Colors.deepPurple.withOpacity(0.9),
+                Colors.deepPurple.withOpacity(0.1),
+              ],
+              stops: const [0.3, 1.0],
+            ),
+          ),
+          child: const Icon(Icons.report_problem_rounded, color: Colors.white, size: 28),
+        ),
+      ),
+    );
+
+    setState(() {
+      _userReportMarkers.add(newMarker);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
-          // 1. 🗺️ 安全的單一 FlutterMap 元件（避免 GPU 重複初始化導致崩潰）
+          // 1. 🗺️ FlutterMap 元件
           FlutterMap(
+            mapController: _mapController, // 👈 綁定地圖控制器
             options: MapOptions(
-              initialCenter: _ntuePosition,
+              initialCenter: _currentPosition,
               initialZoom: 15.5,
               maxZoom: 18.0,
               minZoom: 10.0,
@@ -89,34 +198,35 @@ class _CaseMapPageState extends State<CaseMapPage> {
             children: [
               // (1) 底層地圖圖資
               TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.app',
-                maxZoom: 18,
-                maxNativeZoom: 18,
-              ),
+  // 台灣通用電子地圖（WMTS 規範，極速且在台灣完全不跳 403）
+  urlTemplate: 'https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}',
+  maxZoom: 20,
+  maxNativeZoom: 19, // 支援原生放大到 19 級（看得到小巷與門牌）
+  userAgentPackageName: 'dev.daphne.nopholebia.app',
+),
 
-              // (2) 🖤 黑色質感遮罩（位在地圖圖資之上、Marker圖層之下）
+              // (2) 🖤 黑色質感遮罩
               IgnorePointer(
                 child: Container(
                   color: Colors.black.withOpacity(0.12),
                 ),
               ),
 
-              // (3) 標記圖層（位在黑色遮罩之上，視覺最顯眼）
+              // (3) 標記圖層
               MarkerLayer(
                 markers: [
-                  // 您的位置地標 (帶下方文字)
+                  // 📍 您的位置地標 (動態顯示 _currentPosition)
                   Marker(
-                    point: const LatLng(25.0245, 121.5410),
-                    width: 70,
-                    height: 52,
+                    point: _currentPosition,
+                    width: 80,
+                    height: 56,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           Icons.location_on,
                           color: baseGreen,
-                          size: 30,
+                          size: 32,
                         ),
                         Text(
                           '您的位置',
@@ -165,9 +275,57 @@ class _CaseMapPageState extends State<CaseMapPage> {
                       ),
                     );
                   }).toList(),
+                  ..._jsonCaseMarkers,
+                  ..._userReportMarkers,
                 ],
               ),
             ],
+          ),
+
+          // 🎯 定位重置按鈕 (右下角定位小圖示)
+          Positioned(
+            right: 20,
+            bottom: 130,
+            child: FloatingActionButton(
+              mini: true,
+              backgroundColor: Colors.white,
+              elevation: 4,
+              onPressed: () {
+                _mapController.move(_currentPosition, 16.0);
+              },
+              child: _isLoadingLocation
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: baseGreen,
+                      ),
+                    )
+                  : Icon(Icons.my_location, color: baseGreen),
+            ),
+          ),
+
+          Positioned(
+            right: 20,
+            bottom: 190,
+            child: FloatingActionButton.extended(
+              heroTag: 'report_btn',
+              backgroundColor: Colors.redAccent,
+              elevation: 4,
+              icon: const Icon(Icons.add_location_alt_rounded, color: Colors.white),
+              label: const Text('通報偷拍點', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              onPressed: () async {
+                final result = await showDialog<UserReport>(
+                  context: context,
+                  builder: (ctx) => const ReportCaseDialog(),
+                );
+
+                if (result != null) {
+                  _addUserReportToMap(result);
+                }
+              },
+            ),
           ),
 
           // 2. 🟢 中央 Hint 操作提示卡片
@@ -252,7 +410,7 @@ class _CaseMapPageState extends State<CaseMapPage> {
             child: _buildBottomStaticNav(),
           ),
 
-          // 4. 底部彈出內容卡片（蓋過導覽列，切齊底部）
+          // 4. 底部彈出內容卡片
           if (_showBottomCard && _activeRiskMarker != null)
             _buildBottomRiskCard(),
         ],
