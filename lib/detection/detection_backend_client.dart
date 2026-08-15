@@ -11,7 +11,8 @@ class DetectionBackendClient {
   final Duration timeout;
 
   DetectionBackendClient({
-    this.endpoint = 'http://192.168.1.100:8000/api/detection/analyze', // TODO: 換成實際後端網址
+    this.endpoint =
+        'http://<YOUR_LOCAL_IP>:8000/api/v1/analyze', // TODO: 換成你當前網路的 IP
     this.timeout = const Duration(seconds: 10),
   });
 
@@ -25,7 +26,9 @@ class DetectionBackendClient {
   ///   "description": "偵測到非對稱的幾何小黑孔與微光特徵...",
   ///   "reportId": "xxxx"   // 給後續報案敘述/PDF下載用
   /// }
-  Future<Map<String, dynamic>?> submitScan(DetectionSessionSummary summary) async {
+  Future<Map<String, dynamic>?> submitScan(
+    DetectionSessionSummary summary,
+  ) async {
     try {
       final response = await http
           .post(

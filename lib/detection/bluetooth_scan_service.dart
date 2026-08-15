@@ -19,7 +19,15 @@ import 'detection_result.dart';
 
 /// 常見攝影機/監控裝置命名會出現的關鍵字(小寫比對)
 const List<String> _suspiciousKeywords = [
-  'cam', 'ipc', 'dvr', 'nvr', 'eye', 'spy', 'p2p', 'wificam', 'smartcam',
+  'cam',
+  'ipc',
+  'dvr',
+  'nvr',
+  'eye',
+  'spy',
+  'p2p',
+  'wificam',
+  'smartcam',
 ];
 
 class BluetoothScanService {
@@ -43,7 +51,9 @@ class BluetoothScanService {
           if (name.isEmpty) continue;
 
           final lowerName = name.toLowerCase();
-          final suspicious = _suspiciousKeywords.any((k) => lowerName.contains(k));
+          final suspicious = _suspiciousKeywords.any(
+            (k) => lowerName.contains(k),
+          );
 
           found[r.device.remoteId.str] = BluetoothDeviceInfo(
             name: name,
@@ -54,9 +64,13 @@ class BluetoothScanService {
         }
       });
 
-      await FlutterBluePlus.startScan(timeout: timeout);
-      await FlutterBluePlus.isScanning.where((s) => s == false).first;
-      await subscription.cancel();
+      try {
+        await FlutterBluePlus.startScan(timeout: timeout);
+        await FlutterBluePlus.isScanning.where((s) => s == false).first;
+      } finally {
+        await subscription.cancel();
+        await FlutterBluePlus.stopScan();
+      }
 
       return found.values.toList();
     } catch (e) {
