@@ -8,6 +8,7 @@ from typing import List, Optional
 
 from pipeline import run_anti_pinhole_inference
 import storage
+from police import router as police_router
 
 
 @asynccontextmanager
@@ -23,6 +24,8 @@ app = FastAPI(
     version="2.1.0",
     lifespan=lifespan,
 )
+
+app.include_router(police_router)
 
 app.add_middleware(
     CORSMiddleware,
