@@ -63,11 +63,12 @@ def run_anti_pinhole_inference(payload) -> dict:
     )
     bluetooth_suspicious_detected = suspicious_bluetooth_device_count > 0
 
+    # 修正參數名稱，對齊 tms_engine.py 的定義
     threat_result = calculate_threat_score(
-        optical_glint_score=glint_score,
+        environment_context=env_context or "未提供",
+        high_risk_glint_count=high_risk_glint_count,
         wifi_camera_detected=wifi_camera_detected,
         bluetooth_suspicious_detected=bluetooth_suspicious_detected,
-        environment_type=env_context or "未提供",
     )
     print(f"輔助訊號分數計算完成(僅供LLM參考): {threat_result['risk_percentage']}% ({threat_result['risk_level']})")
 

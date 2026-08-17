@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'result_page.dart';
 import 'ai_assistant_page.dart';
@@ -12,7 +14,8 @@ class ScanPage extends StatefulWidget {
   State<ScanPage> createState() => _ScanPageState();
 }
 
-class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin {
+class _ScanPageState extends State<ScanPage>
+    with SingleTickerProviderStateMixin {
   final Color baseGreen = const Color(0xFF395938);
   final Color lightBackground = const Color(0xFFF0EEDC);
 
@@ -56,21 +59,108 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
     super.dispose();
   }
 
+  double _environmentMultiplier(String? environmentContext) {
+    final normalized = (environmentContext ?? '').trim().toLowerCase();
+
+    final highPrivacyKeywords = [
+      '廁',
+      '洗手間',
+      '便所',
+      '試衣',
+      '更衣',
+      '淋浴',
+      '浴室',
+      '湯屋',
+      'restroom',
+      'bathroom',
+      'fitting',
+      'wc',
+      'changing',
+    ];
+
+    final mediumPrivacyKeywords = [
+      '飯店',
+      '旅館',
+      '民宿',
+      '房間',
+      '臥室',
+      '套房',
+      'ktv',
+      '包廂',
+      '按摩',
+      'hotel',
+      'room',
+      'airbnb',
+      'suite',
+    ];
+
+    final lowPrivacyKeywords = [
+      '辦公',
+      '會議',
+      '教室',
+      '圖書館',
+      '大廳',
+      '咖啡廳',
+      '辦公室',
+      'office',
+      'meeting',
+      'classroom',
+      'library',
+      'cafe',
+    ];
+
+    if (highPrivacyKeywords.any(normalized.contains)) return 1.4;
+    if (mediumPrivacyKeywords.any(normalized.contains)) return 1.1;
+    if (lowPrivacyKeywords.any(normalized.contains)) return 0.7;
+    return 1.0;
+  }
+
   (RiskLevel, int) _buildResultFrom(
     DetectionSessionSummary summary,
     Map<String, dynamic>? backendResult,
   ) {
     if (backendResult != null && backendResult['riskLevel'] != null) {
-      final level = backendResult['riskLevel'] == 'high' ? RiskLevel.high : RiskLevel.low;
-      final score = (backendResult['riskPercentage'] as num?)?.toInt() ?? 0;
-      return (level, score);
+      final riskLevelRaw = backendResult['riskLevel'].toString().toLowerCase();
+      final level = switch (riskLevelRaw) {
+        'high' => RiskLevel.high,
+        'medium' => RiskLevel.medium,
+        _ => RiskLevel.low,
+      };
+      final score = (backendResult['riskPercentage'] as num?)?.round() ?? 0;
+      return (level, score.clamp(0, 100));
     }
 
-    final hasRisk = summary.highRiskGlintCount > 0 || summary.boundingBoxes.isNotEmpty;
-    return (
-      hasRisk ? RiskLevel.high : RiskLevel.low,
-      hasRisk ? 70 : 5,
+    // 與 backend/tms_engine.py 保持一致的本地估算公式。
+    final wifiDetected = summary.networkDevices.isNotEmpty;
+    final bluetoothDetected = summary.bluetoothDevices.isNotEmpty;
+    final opticalGlintScore = (summary.highRiskGlintCount * 0.5).clamp(
+      0.0,
+      1.0,
     );
+
+    const wifiWeight = 4.0;
+    const bluetoothWeight = 3.5;
+    const glintWeight = 2.5;
+    const bias = -2.5;
+
+    final rawScore =
+        (wifiDetected ? wifiWeight : 0.0) +
+        (bluetoothDetected ? bluetoothWeight : 0.0) +
+        (opticalGlintScore * glintWeight) +
+        bias;
+
+    final adjustedScore =
+        rawScore * _environmentMultiplier(summary.environmentContext);
+    final probability = 1 / (1 + math.exp(-adjustedScore));
+    final score = (probability * 100).round().clamp(0, 100);
+
+    final level = score >= 75
+        ? RiskLevel.high
+        : score >= 40
+        ? RiskLevel.medium
+        : RiskLevel.low;
+
+    return (level, score);
   }
 
   void _startScan(BuildContext context) {
@@ -86,10 +176,8 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (context) => ResultPage(
-                  riskLevel: result.$1,
-                  score: result.$2,
-                ),
+                builder: (context) =>
+                    ResultPage(riskLevel: result.$1, score: result.$2),
               ),
             );
           },
@@ -110,24 +198,17 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
           clipBehavior: Clip.none,
           children: [
             // 1. 背景
-            Positioned.fill(
-              child: Container(color: baseGreen),
-            ),
+            Positioned.fill(child: Container(color: baseGreen)),
             Positioned.fill(
               child: CustomPaint(
-                painter: AngularBackgroundPainter(
-                  lightColor: lightBackground,
-                ),
+                painter: AngularBackgroundPainter(lightColor: lightBackground),
               ),
             ),
 
             // 2. 主要內容
             Positioned.fill(
               child: Padding(
-                padding: const EdgeInsets.only(
-                  top: 54.0,
-                  bottom: 34.0,
-                ),
+                padding: const EdgeInsets.only(top: 54.0, bottom: 34.0),
                 child: Column(
                   children: [
                     const SizedBox(height: 85),
@@ -171,8 +252,14 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                               ),
                               decoration: InputDecoration(
                                 hintText: '例如：廁所',
-                                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 15),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                hintStyle: TextStyle(
+                                  color: Colors.grey.shade400,
+                                  fontSize: 15,
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 14,
+                                ),
                                 border: InputBorder.none,
                                 suffixIcon: _showCheckIcon
                                     ? Padding(
@@ -216,9 +303,14 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
                                       border: Border.all(
-                                        color: const Color(0xFFFFFEC3).withValues(
-                                          alpha: (1.0 - _animationController.value).clamp(0.0, 1.0),
-                                        ),
+                                        color: const Color(0xFFFFFEC3)
+                                            .withValues(
+                                              alpha:
+                                                  (1.0 -
+                                                          _animationController
+                                                              .value)
+                                                      .clamp(0.0, 1.0),
+                                            ),
                                         width: 1.5,
                                       ),
                                     ),
@@ -308,7 +400,8 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                             Navigator.pushReplacement(
                               context,
                               PageRouteBuilder(
-                                pageBuilder: (context, anim1, anim2) => const AIAssistantPage(),
+                                pageBuilder: (context, anim1, anim2) =>
+                                    const AIAssistantPage(),
                                 transitionDuration: Duration.zero,
                               ),
                             );
@@ -325,7 +418,8 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
                             Navigator.pushReplacement(
                               context,
                               PageRouteBuilder(
-                                pageBuilder: (context, anim1, anim2) => const CaseMapPage(),
+                                pageBuilder: (context, anim1, anim2) =>
+                                    const CaseMapPage(),
                                 transitionDuration: Duration.zero,
                               ),
                             );
@@ -374,10 +468,7 @@ class _ScanPageState extends State<ScanPage> with SingleTickerProviderStateMixin
               child: SizedBox(
                 width: 54,
                 height: 54,
-                child: Image.asset(
-                  icon,
-                  fit: BoxFit.contain,
-                ),
+                child: Image.asset(icon, fit: BoxFit.contain),
               ),
             ),
           ),

@@ -1,5 +1,6 @@
 import 'package:image/image.dart' as img;
 import 'detection_result.dart';
+import 'dart:math' as math;
 
 class GlintDetector {
   final int threshold;
@@ -40,7 +41,7 @@ class GlintDetector {
                 .reduce((a, b) => a + b) /
             blob.length;
 
-        final radius = (blob.length / 3.14159).clamp(1, 999).round();
+        final radius = (math.sqrt(blob.length / math.pi)).clamp(1, 999).round();
 
         candidates.add(GlintCandidate(
           x: cx,
@@ -161,7 +162,7 @@ class GlintTracker {
               .map((b) => (b - mean) * (b - mean))
               .reduce((a, b) => a + b) /
           brightnesses.length;
-      final stdDev = variance <= 0 ? 0.0 : variance.abs();
+      final stdDev = variance <= 0 ? 0.0 : math.sqrt(variance);
 
       final last = track.history.last;
       results.add(GlintCandidate(

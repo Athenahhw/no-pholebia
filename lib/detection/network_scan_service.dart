@@ -55,10 +55,13 @@ class NetworkScanService {
   }
 
   /// 對單一IP嘗試連接常見攝影機通訊埠,有任何一個連得上就回傳NetworkDevice
+  /// 對單一IP嘗試連接常見攝影機通訊埠,有任何一個連得上就回傳NetworkDevice
   Future<NetworkDevice?> _scanHost(String ip) async {
     final openPorts = <int>[];
 
-    for (final port in _cameraCommonPorts) {
+    // 🚀 修正：將原本的循序 for-await 改成平行 Future.wait
+    // 這樣一個死掉的 IP，最多也只需要 300 毫秒就會結束，而不是 1.8 秒！
+    await Future.wait(_cameraCommonPorts.map((port) async {
       try {
         final socket = await Socket.connect(
           ip,
@@ -70,7 +73,7 @@ class NetworkScanService {
       } catch (_) {
         // 連不上代表該埠沒開,正常情況,略過
       }
-    }
+    }));
 
     if (openPorts.isEmpty) return null;
 
