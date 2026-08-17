@@ -7,13 +7,19 @@ import 'detection_result.dart';
 
 class DetectionBackendClient {
   /// 後端 API 網址
+  /// 可用 --dart-define=AI_ENDPOINT=http://192.168.1.13:8000/api/v1/analyze 覆蓋
   final String endpoint;
   final Duration timeout;
 
   DetectionBackendClient({
-    this.endpoint = 'http://192.168.1.13:8000/api/v1/analyze',
+    String? endpoint,
     this.timeout = const Duration(seconds: 10),
-  });
+  }) : endpoint =
+           endpoint ??
+           const String.fromEnvironment(
+             'AI_ENDPOINT',
+             defaultValue: 'http://192.168.1.13:8000/api/v1/analyze',
+           );
 
   /// 送出掃描結果,回傳後端的分析結果(Map)。
   /// 回傳 null 代表連線失敗/逾時,呼叫端應該顯示錯誤,不要假裝成功。

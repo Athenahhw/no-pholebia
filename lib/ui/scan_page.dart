@@ -126,13 +126,15 @@ class _ScanPageState extends State<ScanPage>
         'medium' => RiskLevel.medium,
         _ => RiskLevel.low,
       };
-      final score = (backendResult['riskPercentage'] as num?)?.round() ?? 0;
-      return (level, score.clamp(0, 100));
+      final score = ((backendResult['riskPercentage'] as num?)?.round() ?? 0)
+          .clamp(0, 35);
+      return (level, score);
     }
 
     // 與 backend/tms_engine.py 保持一致的本地估算公式。
-    final wifiDetected = summary.networkDevices.isNotEmpty;
-    final bluetoothDetected = summary.bluetoothDevices.isNotEmpty;
+    // 只有明確疑似攝影機 / 可疑藍牙才算高風險，避免家裡普通 Wi‑Fi 或藍牙設備被誤判。
+    final wifiDetected = summary.networkDevices.any((d) => d.looksLikeCamera);
+    final bluetoothDetected = summary.bluetoothDevices.any((d) => d.suspicious);
     final opticalGlintScore = (summary.highRiskGlintCount * 0.5).clamp(
       0.0,
       1.0,
@@ -152,11 +154,11 @@ class _ScanPageState extends State<ScanPage>
     final adjustedScore =
         rawScore * _environmentMultiplier(summary.environmentContext);
     final probability = 1 / (1 + math.exp(-adjustedScore));
-    final score = (probability * 100).round().clamp(0, 100);
+    final score = (probability * 100).round().clamp(0, 35);
 
-    final level = score >= 75
+    final level = score >= 20
         ? RiskLevel.high
-        : score >= 40
+        : score >= 8
         ? RiskLevel.medium
         : RiskLevel.low;
 

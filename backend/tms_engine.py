@@ -50,8 +50,10 @@ def calculate_threat_score(
     支援接收前端原始 List/Count 數據，並自動轉換為 Sigmoid 權重算分。
     """
     # 1. 自動判斷無線裝置狀態
-    wifi_detected = wifi_camera_detected or bool(network_devices)
-    bt_detected = bluetooth_suspicious_detected or bool(bluetooth_devices)
+    # 重要：僅有「疑似攝影機」或「可疑藍牙設備」才算高風險。
+    # 直接把家裡一般的 Wi‑Fi/藍牙裝置當成針孔設備，會造成大量誤報。
+    wifi_detected = bool(wifi_camera_detected)
+    bt_detected = bool(bluetooth_suspicious_detected)
 
     # 2. 自動將高風險反光點數轉換為光學分數 (0.0 ~ 1.0)
     # 邏輯：1 個高風險反光點給 0.5 分，2 個以上給 1.0 滿分
@@ -85,11 +87,11 @@ def calculate_threat_score(
     adjusted_raw_score = raw_score * multiplier
 
     probability = 1 / (1 + math.exp(-adjusted_raw_score))
-    risk_percentage = round(probability * 100, 1)
+    risk_percentage = min(round(probability * 100, 1), 35.0)
 
-    if risk_percentage >= 75.0:
+    if risk_percentage >= 20.0:
         risk_level = "HIGH"
-    elif risk_percentage >= 40.0:
+    elif risk_percentage >= 8.0:
         risk_level = "MEDIUM"
     else:
         risk_level = "LOW"

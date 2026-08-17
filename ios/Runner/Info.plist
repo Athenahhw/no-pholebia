@@ -10,6 +10,11 @@
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>需要存取區域網路以偵測可疑的攝影機裝置</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 	<key>NSBonjourServices</key>
 	<array>
     	<string>_http._tcp</string>
