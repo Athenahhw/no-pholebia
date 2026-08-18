@@ -68,10 +68,12 @@ def calculate_threat_score(
         avg_flicker_score = 8.5  # 預設高於門檻之參考值
 
     # 4. 權重與偏置 (Sigmoid 邏輯)
-    W_WIFI = 4.0
-    W_BLUETOOTH = 3.5
-    W_GLINT = 2.5
-    BIAS = -2.5
+    # 家中常見 Wi‑Fi / 藍牙裝置很多，這些僅作輔助資訊，不能像針孔鏡頭反光一樣重。
+    # 將無線設備權重明顯降低，避免正常家用環境被誤判為高風險。
+    W_WIFI = 1.4
+    W_BLUETOOTH = 1.2
+    W_GLINT = 3.2
+    BIAS = -3.4
 
     wifi_score = 1.0 if wifi_detected else 0.0
     bluetooth_score = 1.0 if bt_detected else 0.0
@@ -89,9 +91,10 @@ def calculate_threat_score(
     probability = 1 / (1 + math.exp(-adjusted_raw_score))
     risk_percentage = min(round(probability * 100, 1), 35.0)
 
-    if risk_percentage >= 20.0:
+    # 更保守的 demo 模式：避免家中常見 Wi‑Fi / 藍牙 裝置誤判成中風險。
+    if risk_percentage >= 30.0:
         risk_level = "HIGH"
-    elif risk_percentage >= 8.0:
+    elif risk_percentage >= 15.0:
         risk_level = "MEDIUM"
     else:
         risk_level = "LOW"

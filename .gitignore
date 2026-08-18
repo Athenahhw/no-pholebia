@@ -45,4 +45,7 @@ app.*.map.json
 /android/app/release
 backend/scan_records.db
 backend/.env
+backend/.env.example
+.env
+.env.example
 .vscode/

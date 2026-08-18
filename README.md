@@ -6,3 +6,12 @@ Agentic AI 競賽專案 — 使用手機鏡頭 + 區域網路偵測 + AI 多模�
 ## 分工 https://docs.google.com/spreadsheets/d/11aaLYlLb2Qhr9XcGZi8ooJzOMi5sjpJhBM2vwVsZs4U/edit?usp=sharing
 ## 詳細架構見 `docs/ARCHITECTURE.md`
 ## 開始前請先看main分支裡的git使用規範
+
+
+Athena start tip:
+flutter run --debug --dart-define=AI_ENDPOINT=http://192.168.1.13:8000/api/v1/analyze
+
+backend:
+cd /Users/wangxuanhan/Desktop/no\ pholebia/pinhole_detector/backend
+source .venv/bin/activate
+python main.py

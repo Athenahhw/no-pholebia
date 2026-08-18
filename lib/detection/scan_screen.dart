@@ -74,6 +74,7 @@ class _ScanScreenState extends State<ScanScreen> {
   Future<void> _initAndStartScan() async {
     try {
       await _cameraService.initialize();
+      await _cameraService.setTorch(true);
       if (!mounted) return;
       setState(() {});
 
@@ -89,7 +90,6 @@ class _ScanScreenState extends State<ScanScreen> {
       // 3. 啟動防震監聽與計時器 (取代原本寫死的 Timer)
       _startMotionDetection();
       _startTimer();
-
     } catch (e) {
       debugPrint("相機初始化失敗: $e");
       if (mounted) {
@@ -104,7 +104,7 @@ class _ScanScreenState extends State<ScanScreen> {
   /// 📍 啟動倒數計時器 (獨立出來以便重啟)
   void _startTimer() {
     _scanTimer?.cancel(); // 確保不會有重複的 Timer
-    
+
     _scanTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
       if (!mounted) {
         timer.cancel();
@@ -118,11 +118,11 @@ class _ScanScreenState extends State<ScanScreen> {
       if (_timeLeft <= 0) {
         timer.cancel();
         _accelSubscription?.cancel(); // 掃描時間到，關閉晃動偵測
-        
+
         setState(() {
           _isProcessing = true; // 進入等待後端回應狀態
         });
-        
+
         // 掃描時間到，停止串流並彙整資料送後端
         await _stopScanAndSubmit(_networkFuture!, _bluetoothFuture!);
       }
@@ -132,12 +132,16 @@ class _ScanScreenState extends State<ScanScreen> {
   /// 📍 啟動手機晃動偵測
   void _startMotionDetection() {
     // userAccelerometerEventStream 排除了重力影響，只抓取使用者施加的加速度
-    _accelSubscription = userAccelerometerEventStream().listen((UserAccelerometerEvent event) {
+    _accelSubscription = userAccelerometerEventStream().listen((
+      UserAccelerometerEvent event,
+    ) {
       if (_isProcessing) return; // 如果已經在分析了就不管晃動
 
       // 計算三軸加速度的向量長度 (總搖晃力道)
-      double acceleration = math.sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
-      
+      double acceleration = math.sqrt(
+        event.x * event.x + event.y * event.y + event.z * event.z,
+      );
+
       // 門檻值：8.0 大約是明顯的快速手抖或移動
       if (acceleration > 8.0 && !_showShakeWarning) {
         _handleShakeDetected();
@@ -150,11 +154,11 @@ class _ScanScreenState extends State<ScanScreen> {
     setState(() {
       _showShakeWarning = true;
       _timeLeft = 6; // 重置時間
-      
+
       // 清空之前因為晃動可能產生的「錯誤反光點」與「殘影物件」
-      _glintTracker.reset(); 
+      _glintTracker.reset();
       _allBoundingBoxes.clear();
-      _isFirstFrame = true; 
+      _isFirstFrame = true;
     });
 
     _startTimer(); // 重啟計時器
@@ -250,6 +254,11 @@ class _ScanScreenState extends State<ScanScreen> {
 
     final backendResult = await _backendClient.submitScan(summary);
 
+    debugPrint(
+      '📦 scan summary => totalGlint=${summary.totalGlintCount}, highRisk=${summary.highRiskGlintCount}, boxes=${summary.boundingBoxes.length}',
+    );
+    debugPrint('📤 backendResult => $backendResult');
+
     if (!mounted) return;
 
     widget.onScanComplete(summary, backendResult);
@@ -279,7 +288,7 @@ class _ScanScreenState extends State<ScanScreen> {
         fit: StackFit.expand,
         children: [
           CameraPreview(_cameraService.controller!),
-          
+
           // 掃描框 UI
           Center(
             child: Container(
@@ -288,7 +297,9 @@ class _ScanScreenState extends State<ScanScreen> {
               decoration: BoxDecoration(
                 border: Border.all(
                   // 👈 根據是否晃動切換框線顏色
-                  color: _showShakeWarning ? Colors.redAccent : Colors.green.withValues(alpha: 0.5),
+                  color: _showShakeWarning
+                      ? Colors.redAccent
+                      : Colors.green.withValues(alpha: 0.5),
                   width: _showShakeWarning ? 4 : 2,
                 ),
                 borderRadius: BorderRadius.circular(16),
@@ -303,20 +314,33 @@ class _ScanScreenState extends State<ScanScreen> {
               left: 20,
               right: 20,
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: 20,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.redAccent.withValues(alpha: 0.9),
                   borderRadius: BorderRadius.circular(12),
-                  boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 8)],
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black54, blurRadius: 8),
+                  ],
                 ),
                 child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.warning_amber_rounded, color: Colors.white, size: 28),
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: Colors.white,
+                      size: 28,
+                    ),
                     SizedBox(width: 8),
                     Text(
                       "晃動過大！掃描已重置",
-                      style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
@@ -335,9 +359,13 @@ class _ScanScreenState extends State<ScanScreen> {
                     style: TextStyle(
                       fontSize: 80,
                       // 👈 如果正在警告，數字變紅色提醒
-                      color: _showShakeWarning ? Colors.redAccent : Colors.white,
+                      color: _showShakeWarning
+                          ? Colors.redAccent
+                          : Colors.white,
                       fontWeight: FontWeight.bold,
-                      shadows: const [Shadow(color: Colors.black, blurRadius: 10)],
+                      shadows: const [
+                        Shadow(color: Colors.black, blurRadius: 10),
+                      ],
                     ),
                   ),
                   const Text(

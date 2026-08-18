@@ -104,7 +104,7 @@ def run_anti_pinhole_inference(payload) -> dict:
 
     llm_risk_percentage = float(llm_result.get("risk_percentage", threat_result["risk_percentage"]))
     final_risk_percentage = min(llm_risk_percentage, 35.0)
-    final_risk_level = "high" if final_risk_percentage >= 20.0 else "medium" if final_risk_percentage >= 8.0 else "low"
+    final_risk_level = "high" if final_risk_percentage >= 30.0 else "medium" if final_risk_percentage >= 15.0 else "low"
 
     # ---- 3. 打包最終回傳格式 ----
     final_output = {

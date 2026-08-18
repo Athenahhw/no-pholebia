@@ -156,9 +156,9 @@ class _ScanPageState extends State<ScanPage>
     final probability = 1 / (1 + math.exp(-adjustedScore));
     final score = (probability * 100).round().clamp(0, 35);
 
-    final level = score >= 20
+    final level = score >= 30
         ? RiskLevel.high
-        : score >= 8
+        : score >= 15
         ? RiskLevel.medium
         : RiskLevel.low;
 
