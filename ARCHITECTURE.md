@@ -1,118 +1,112 @@
-# No Pholebia(不再孔怖)— 架構文件
+# No Pholebia — Architecture Document
 
-> 最後更新: 2026/08/02 — 已確認換組別(不再受限AMD資源要求),物件偵測改用地端ML Kit
+## 1. Project Objectives
 
-## 1. 專案目標
+Develop an iOS/Android application based on the concept of Agentic AI to assist users in identifying disguised pinhole cameras in specific environments. The core lies not in simple one-off recognition, but in enabling the AI agent to autonomously plan verification steps:
+Discover suspicious object → Determine low confidence → Autonomously decide the next step (change angle, change position, check network anomalies) → Draw conclusions by synthesising multiple streams of evidence.
 
-以 Agentic AI 概念開發一款可在 iOS/Android 使用的 App,協助使用者判斷特定場域中
-是否存在偽裝針孔攝影機。核心不是單純一次性辨識,而是讓 AI 代理人**自主規劃驗證步驟**:
-發現可疑物 → 判斷信心度不足 → 自主決定下一步(換角度、換位置、查網路異常)→ 綜合多方證據下結論。
+## 2. Competition Category
 
-## 2. 比賽組別
+Confirmed participation in the "Information Application Category" (or a similar category not bound to specific hardware vendors). We are **no longer restricted by the requirement to utilise AMD-related resources**. The technical direction remains unchanged, but the architecture is no longer tied to specific hardware requirements, thereby significantly increasing development flexibility.
 
-已確認改參加「資訊應用組」(或同類不綁定特定廠商硬體的組別),**不再受限於必須使用
-AMD相關資源的規定**。技術方向不變,只是不用再為了滿足硬體要求綁死架構,開發彈性變高。
+## 3. Overall System Architecture Diagram
 
-## 3. 系統整體架構圖
-
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
-│                        使用者 (App UI)                    │
-└───────────────┬─────────────────────────┬─────────────────┘
+│                     User (App UI)                       │
+└───────────────┬─────────────────────────┬───────────────┘
                 │                         │
         ┌───────▼────────┐        ┌───────▼────────┐
-        │  前端 (Flutter)  │        │   後端 (Server)  │
+        │ Frontend (App) │        │Backend (Server)│
         └───────┬────────┘        └───────┬────────┘
                 │                         │
    ┌────────────┼────────────┐    ┌───────┼──────────────┐
    │            │            │    │       │              │
 ┌──▼───┐   ┌────▼────┐  ┌────▼──┐┌▼───────▼──┐  ┌────────▼───────┐
-│反光偵測 │  │風險評估  │  │GPS報案 ││多模態推理  │  │案件地圖資料庫/  │
-│物件偵測 │  │(權重判定)│  │地圖照片││語義推理    │  │知識庫          │
-│★你負責│  │          │  │介面   ││(LLM整合)  │  │               │
-└──┬───┘   └─────────┘  └───────┘└───────────┘  └───────────────┘
+│Glint │   │Risk     │  │GPS &  ││Multi-Modal│  │Incident Map DB/│
+│Object│   │Assess   │  │Map UI ││LLM Engine │  │Knowledge Base  │
+│Detect│   │(Weights)│  │       ││(Semantic) │  │                │
+│★YOURS│   │         │  │       ││           │  │                │
+└──┬───┘   └─────────┘  └───────┘└───────────┘  └────────────────┘
    │
-   └─► 輸出 DetectionSessionSummary(含截圖) → 傳給後端做多模態推理
+   └─► Outputs DetectionSessionSummary (with screenshots) → Transmits to Backend for Reasoning
+   ```
+
+## 4. Glint Detection + On-Device Object Detection (lib/detection/)
+### 4.1 Responsibility Boundaries
+Input: Real-time camera frames (camera stream).
+Output: After a complete scan, compiles data into a DetectionSessionSummary object and POSTs it to the backend.
+This module is not responsible for drawing conclusions (it does not judge "reasonableness"). It solely focuses on evidence gathering: bounding candidate locations, measuring glint anomalies, and attaching screenshots. Semantic judgement is delegated to the backend multi-modal LLM.
+
+### 4.2 Internal Workflow
+
+```text
+User taps "One-Tap Scan"
+  │
+  ▼
+ScanScreen opens camera, measures ambient brightness → Auto-enables torch if too dark
+  │
+  ▼
+During the fixed 6-second scan, two tasks run concurrently:
+  ├─ Every frame: GlintDetector.detect() identifies glint candidate points
+  │             → GlintTracker tracks the flicker pattern of the same bright point (whilst shaking)
+  │             → A high flicker score indicates a higher probability of directional reflection from a lens.
+  │
+  └─ Every 1.5s: ObjectDetectorService (Google ML Kit) detects candidate locations on-device
+                → Only provides bounding boxes + rough classification; no pinpoint recognition.
+  │
+  ▼
+Scan auto-terminates after 6 seconds, compiling DetectionSessionSummary:
+  - glints (List of glint points + flicker scores)
+  - boundingBoxes (Candidate locations, rough classifications by ML Kit)
+  - environmentContext (User-input context, e.g., "washroom")
+  - screenshotBase64 (The final frame, JPEG base64 encoded, for backend LLM visual analysis)
+  - Other metadata (Ambient brightness, torch status, scan duration)
+  │
+  ▼
+POST to Backend AI (DetectionBackendClient.submitScan)
+  │
+  ▼
+Backend returns risk assessment results → onScanComplete callback → Redirects to ResultPage
+
+```
+### 4.3 File List
+
+| File | Description |
+| --- | --- |
+| `camera_service.dart` | Camera initialisation, torch control, differential capture (torch on/off). |
+| `image_converter.dart` | Converts `CameraImage` (YUV420) to `img.Image`. |
+| `glint_detector.dart` | Glint point detection (flood-fill blob detection) + ambient brightness measurement + `GlintTracker` (multi-frame flicker tracking). |
+| `object_detector_service.dart` | On-device object detection (Google ML Kit), bounding candidate locations. |
+| `detection_result.dart` | Data structure definitions; `DetectionSessionSummary.toJson()` formulates the JSON payload. |
+| `detection_backend_client.dart` | POSTs scan results to the backend API and retrieves the risk assessment response. |
+| `scan_screen.dart` | Main scanning UI, integrating all logic, featuring a four-corner scanning frame, scanning line animation, and haptic/audio alerts. |
+
+## 5. Frontend-Backend Data Contract
+
+The complete format and field descriptions for `DetectionSessionSummary.toJson()` are documented in `BACKEND_DATA_FORMAT.md` and the example file `example_detection_summary.json`. These have been provided to backend teammates as a reference for prompt design.
+
+## 6. Technology Stack Overview
+
+| Component | Selection |
+| --- | --- |
+| App Framework | Flutter (Dart) |
+| Camera Control | `camera` package |
+| On-Device Object Detection | `google_mlkit_object_detection` (on-device computing, no server required) |
+| Image Processing | `image` package |
+| Network Requests | `http` |
+| Backend Communication | REST API (JSON, including base64 screenshots) |
+
+## 7. Software-Only Strategy (Hardware Independent)
+
+Glint detection operates entirely independently of external light sources or specialised hardware:
+
+1. **Multi-Frame Motion Tracking as Core Mechanism**: Without external light sources, bright spots in a single frame are difficult to distinguish from ordinary reflective objects (nails, metal fittings, glossy paint). Judging by the flicker pattern of the same bright point whilst the user shakes the phone serves as a low-cost, highly effective distinguishing feature.
+2. **Utilising Built-in Phone Lighting**: Autonomously assesses ambient brightness, automatically turning on the torch to aid glint detection if the environment is too dim.
+3. **Object Detection Focuses on Bounding, Delegating Semantics to Backend**: The on-device ML Kit solely needs to draw bounding boxes for candidate positions. The actual judgement of "what this is and whether it makes sense" is handed over to the backend multi-modal LLM via screenshot analysis. The frontend does not need to train/fine-tune models locally, dramatically lowering development complexity and hardware reliance.
+4. **Honest Presentation of Confidence**: The narrative focus of the demo is on "how the Agent utilises limited evidence for multi-step reasoning and guides user verification", rather than overclaiming to completely replace professional detection equipment.
+
 ```
 
-## 4. 反光偵測 + 地端物件偵測 (`lib/detection/`)
 
-### 4.1 職責邊界
-輸入:相機即時影格(camera stream)
-輸出:一次完整掃描結束後,整理成 `DetectionSessionSummary` 物件,POST 給後端。
-**這個模組不負責下結論(不判斷"這合不合理"),只負責蒐證:框出候選位置、量測反光異常、
-附上截圖,語意判斷交給後端多模態 LLM。**
 
-### 4.2 內部流程
-
-```
-使用者點「一鍵掃描」
-  │
-  ▼
-ScanScreen 開啟相機,量測環境亮度 → 太暗自動開手電筒
-  │
-  ▼
-掃描期間(固定6秒)同時進行兩件事:
-  ├─ 每一幀: GlintDetector.detect() 找反光候選點
-  │           → GlintTracker 追蹤同一亮點的閃爍模式(晃動手機時的亮度變化)
-  │           → 閃爍分數高代表較可能是鏡頭的方向性反光,非一般反光物
-  │
-  └─ 每1.5秒: ObjectDetectorService(Google ML Kit)在地端偵測候選物件位置
-              → 只框位置+粗略分類,不追求精準辨識
-  │
-  ▼
-6秒後自動結束掃描,整理成 DetectionSessionSummary:
-  - glints(反光點清單+閃爍分數)
-  - boundingBoxes(候選物件位置,ML Kit給的粗略分類)
-  - environmentContext(使用者輸入的所在環境文字,例如"廁所")
-  - screenshotBase64(最後一幀畫面,JPEG base64編碼,給後端LLM看圖判斷)
-  - 其他中繼資料(環境亮度、手電筒狀態、掃描時間)
-  │
-  ▼
-POST 給後端 AI(DetectionBackendClient.submitScan)
-  │
-  ▼
-後端回傳風險評估結果 → onScanComplete callback → 導到結果頁(隊友的ResultPage)
-```
-
-### 4.3 檔案清單
-
-| 檔案 | 說明 |
-|---|---|
-| `camera_service.dart` | 相機初始化、手電筒控制、開燈/不開燈差異拍照 |
-| `image_converter.dart` | CameraImage(YUV420) 轉 img.Image |
-| `glint_detector.dart` | 反光點偵測(flood-fill blob detection)+ 環境亮度量測 + `GlintTracker`(多幀閃爍追蹤) |
-| `object_detector_service.dart` | 地端物件偵測(Google ML Kit),框出候選位置 |
-| `detection_result.dart` | 資料結構定義,`DetectionSessionSummary.toJson()` 就是給後端的JSON格式 |
-| `detection_backend_client.dart` | 把掃描結果 POST 給後端 API,取得風險評估回應 |
-| `scan_screen.dart` | 掃描主畫面,整合以上所有邏輯,四角掃描框+黃線動畫+震動音效提醒 |
-
-## 5. 前後端資料合約
-
-`DetectionSessionSummary.toJson()` 的完整格式與欄位說明,見 `BACKEND_DATA_FORMAT.md`
-與範例檔 `example_detection_summary.json`。已提供給後端隊友作為 prompt 設計參考。
-
-## 6. 技術棧總覽
-
-| 項目 | 選用 |
-|---|---|
-| App框架 | Flutter (Dart) |
-| 相機控制 | `camera` package |
-| 地端物件偵測 | `google_mlkit_object_detection`(裝置端運算,不需伺服器) |
-| 影像處理 | `image` package |
-| 網路請求 | `http` |
-| 後端溝通 | REST API(JSON,含base64截圖) |
-
-## 7. 純軟體策略(不外接硬體,與硬體資源需求脫鉤)
-
-反光偵測完全不依賴外部光源或特殊硬體:
-
-1. **多幀晃動追蹤是核心機制**:沒有外接光源時,單張影像的亮點很難跟一般反光物
-   (釘子、金屬件、油漆反光)區分。靠使用者晃動手機時同一亮點的閃爍模式判斷,
-   是低成本且有效的區分特徵。
-2. **善用手機既有光源**:自動判斷環境亮度,太暗自動開手電筒輔助反光偵測。
-3. **物件偵測不追求精準分類,交給後端做語意判斷**:地端 ML Kit 只需要框出候選位置,
-   真正「這是什麼、合不合理」的判斷交給後端多模態 LLM 看截圖判斷,前端不需要
-   自己訓練/微調模型,大幅降低開發複雜度與硬體依賴。
-4. **誠實呈現信心度,不過度宣稱**:Demo敘事重點放在「Agent如何用有限證據做多步驟
-   推理與引導使用者驗證」,而非宣稱能取代專業偵測設備。
