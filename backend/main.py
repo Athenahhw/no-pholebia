@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 
 from pipeline import run_anti_pinhole_inference
+from llm_agent import generate_travel_assistant_advice 
 import storage
 from police import router as police_router
 
@@ -35,6 +36,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ============================================================
+# Pydantic 資料模型
+# ============================================================
 
 class GlintCandidate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -96,6 +101,16 @@ class ReviewDecision(BaseModel):
     note: Optional[str] = Field(None, description="審核備註,選填")
 
 
+class AssistantQueryRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    target_date: str = Field(..., alias="targetDate", description="預計前往日期，例如: 08/17/2025")
+    destination: str = Field(..., alias="destination", description="目的地名稱，例如: 國立台北教育大學")
+
+
+# ============================================================
+# API 服務端點 (Endpoints)
+# ============================================================
+
 @app.get("/")
 def read_root():
     return {
@@ -120,6 +135,35 @@ def analyze_privacy_risk(payload: AnalyzeRequest):
     except Exception as e:
         print(f" 伺服器運算異常: {str(e)}")
         raise HTTPException(status_code=500, detail=f"伺服器運算異常: {str(e)}")
+
+
+@app.post("/api/v1/assistant/query")
+def query_ai_assistant(payload: AssistantQueryRequest):
+    """
+    AI 出遊助理端點：接收目的地與日期，自動比對歷史案件並讓 Gemini 生成客製化安全建議。
+    """
+    try:
+        # 1. 至案件地圖撈取歷史資料
+        matched_cases = storage.search_cases_by_destination(payload.destination)
+        
+        # 2. 呼叫 Gemini AI 動態推論場景並生成建議
+        advice = generate_travel_assistant_advice(
+            destination=payload.destination,
+            target_date=payload.target_date,
+            matched_cases=matched_cases
+        )
+        
+        return {
+            "status": "success",
+            "destination": payload.destination,
+            "targetDate": payload.target_date,
+            "has_history_cases": len(matched_cases) > 0,
+            "data": advice
+        }
+
+    except Exception as e:
+        print(f"❌ AI 助理查詢異常: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI 助理服務異常: {str(e)}")
 
 
 # ============================================================
