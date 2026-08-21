@@ -58,8 +58,10 @@ class _ScanScreenState extends State<ScanScreen> {
 
   // 👈 新增：用於控制計時器與晃動警告的變數
   Timer? _scanTimer;
+  Timer? _scanBeamTimer;
   StreamSubscription<UserAccelerometerEvent>? _accelSubscription;
   bool _showShakeWarning = false;
+  double _scanBeamY = 0.0;
 
   // 用來保存背景任務的 Future，方便重置時不中斷它們
   Future<List<NetworkDevice>>? _networkFuture;
@@ -90,6 +92,7 @@ class _ScanScreenState extends State<ScanScreen> {
       // 3. 啟動防震監聽與計時器 (取代原本寫死的 Timer)
       _startMotionDetection();
       _startTimer();
+      _startScanBeamAnimation();
     } catch (e) {
       debugPrint("相機初始化失敗: $e");
       if (mounted) {
@@ -126,6 +129,19 @@ class _ScanScreenState extends State<ScanScreen> {
         // 掃描時間到，停止串流並彙整資料送後端
         await _stopScanAndSubmit(_networkFuture!, _bluetoothFuture!);
       }
+    });
+  }
+
+  void _startScanBeamAnimation() {
+    _scanBeamTimer?.cancel();
+    _scanBeamTimer = Timer.periodic(const Duration(milliseconds: 32), (timer) {
+      if (!mounted || _isProcessing) return;
+      setState(() {
+        _scanBeamY += 0.025;
+        if (_scanBeamY > 1.0) {
+          _scanBeamY = 0.0;
+        }
+      });
     });
   }
 
@@ -267,6 +283,7 @@ class _ScanScreenState extends State<ScanScreen> {
   @override
   void dispose() {
     _scanTimer?.cancel(); // 退出頁面時取消計時器
+    _scanBeamTimer?.cancel();
     _accelSubscription?.cancel(); // 退出頁面時取消感測器監聽
     _cameraService.dispose();
     _objectDetector.dispose();
@@ -282,6 +299,15 @@ class _ScanScreenState extends State<ScanScreen> {
       );
     }
 
+    final screenSize = MediaQuery.of(context).size;
+    final inset = 12.0;
+    final scanRect = Rect.fromLTWH(
+      inset,
+      120,
+      screenSize.width - inset * 2,
+      screenSize.height - 220,
+    );
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -289,20 +315,14 @@ class _ScanScreenState extends State<ScanScreen> {
         children: [
           CameraPreview(_cameraService.controller!),
 
-          // 掃描框 UI
-          Center(
-            child: Container(
-              width: 300,
-              height: 400,
-              decoration: BoxDecoration(
-                border: Border.all(
-                  // 👈 根據是否晃動切換框線顏色
-                  color: _showShakeWarning
-                      ? Colors.redAccent
-                      : Colors.green.withValues(alpha: 0.5),
-                  width: _showShakeWarning ? 4 : 2,
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: ScanOverlayPainter(
+                  scanRect: scanRect,
+                  beamYRatio: _scanBeamY,
+                  showShakeWarning: _showShakeWarning,
                 ),
-                borderRadius: BorderRadius.circular(16),
               ),
             ),
           ),
@@ -386,5 +406,89 @@ class _ScanScreenState extends State<ScanScreen> {
         ],
       ),
     );
+  }
+}
+
+class ScanOverlayPainter extends CustomPainter {
+  final Rect scanRect;
+  final double beamYRatio;
+  final bool showShakeWarning;
+
+  const ScanOverlayPainter({
+    required this.scanRect,
+    required this.beamYRatio,
+    required this.showShakeWarning,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final outer = Paint()..color = Colors.black.withValues(alpha: 0.25);
+    final overlayPath = Path.combine(
+      PathOperation.difference,
+      Path()..addRect(Rect.fromLTWH(0, 0, size.width, size.height)),
+      Path()..addRect(scanRect),
+    );
+    canvas.drawPath(overlayPath, outer);
+
+    final whiteStroke = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4;
+
+    final cornerLength = 28.0;
+    final corners = [
+      [scanRect.topLeft, Offset(scanRect.left + cornerLength, scanRect.top)],
+      [scanRect.topLeft, Offset(scanRect.left, scanRect.top + cornerLength)],
+      [scanRect.topRight, Offset(scanRect.right - cornerLength, scanRect.top)],
+      [scanRect.topRight, Offset(scanRect.right, scanRect.top + cornerLength)],
+      [
+        scanRect.bottomLeft,
+        Offset(scanRect.left + cornerLength, scanRect.bottom),
+      ],
+      [
+        scanRect.bottomLeft,
+        Offset(scanRect.left, scanRect.bottom - cornerLength),
+      ],
+      [
+        scanRect.bottomRight,
+        Offset(scanRect.right - cornerLength, scanRect.bottom),
+      ],
+      [
+        scanRect.bottomRight,
+        Offset(scanRect.right, scanRect.bottom - cornerLength),
+      ],
+    ];
+
+    for (final corner in corners) {
+      canvas.drawLine(corner[0], corner[1], whiteStroke);
+    }
+
+    final beamY = scanRect.top + (scanRect.height * beamYRatio);
+    final beamRect = Rect.fromLTWH(scanRect.left, beamY - 4, scanRect.width, 8);
+
+    final beamShadow = Paint()
+      ..color = Colors.yellow.withValues(alpha: 0.42)
+      ..style = PaintingStyle.fill;
+    canvas.drawRect(beamRect, beamShadow);
+
+    final beamPaint = Paint()
+      ..shader = const LinearGradient(
+        colors: [Color(0xFFFFF7A8), Color(0xFFFFD727), Color(0xFFFFB800)],
+      ).createShader(beamRect)
+      ..style = PaintingStyle.fill;
+    canvas.drawRect(beamRect, beamPaint);
+
+    if (showShakeWarning) {
+      final warnPaint = Paint()
+        ..color = Colors.redAccent.withValues(alpha: 0.6);
+      canvas.drawRect(scanRect, warnPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant ScanOverlayPainter oldDelegate) {
+    return oldDelegate.beamYRatio != beamYRatio ||
+        oldDelegate.scanRect != scanRect ||
+        oldDelegate.showShakeWarning != showShakeWarning;
   }
 }
