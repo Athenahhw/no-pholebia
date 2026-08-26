@@ -78,11 +78,11 @@ class _CaseMapPageState extends State<CaseMapPage> {
   Color _getRiskColor(String riskLevel) {
     switch (riskLevel) {
       case 'HIGH':
-        return Colors.red;        // 高風險 - 紅色
+        return Color(0xFFE63946);     // 高風險 - 深紅色
       case 'MEDIUM':
-        return Colors.yellow;     // 中風險 - 黃色
+        return Color(0xFFFFA500);     // 中風險 - 黃橘色
       case 'LOW':
-        return Colors.blue;       // 低風險 - 藍色
+        return Color(0xFF1E90FF);     // 低風險 - 道奇藍
       default:
         return Colors.grey;
     }
