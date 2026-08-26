@@ -3,16 +3,16 @@ import 'package:latlong2/latlong.dart';
 
 // 定義風險等級的顏色與內容
 class RiskLevel {
-  static const Color high = Color(0xFFFF45D7);   // 桃粉色 #FF45D7
-  static const Color medium = Color(0xFFFFFF45); // 👈 中風險光圈改回黃色 #FFFF45
-  static const Color low = Color(0xFF4583FF);    // 藍色 #4583FF
+  static const Color high = Color(0xFFE63946);        // 深紅色 #E63946
+  static const Color medium = Color(0xFFFFA500);      // 黃橘色 #FFA500
+  static const Color low = Color(0xFF1E90FF);         // 道奇藍 #1E90FF
 
-  // 標題顏色定義 (中風險文字用綠色)
-  static const Color mediumTitleColor = Color(0xFF395938);
+  // 標題顏色定義
+  static const Color mediumTitleColor = Color(0xFFFFA500); // 中風險文字用黃橘色
 
-  static const String highContent = '國立台北教育大學近一週會有針孔偷拍事件，地區如下：\n篤行樓3樓女廁\n篤行樓4樓女廁\n科學館3樓女廁\n\n請注意安全。';
-  static const String mediumContent = '國立台灣大學近三月會有發現過一次針孔攝影機，被安置在綜合體育館，其餘使用者掃描無異常。請注意安全。';
-  static const String lowContent = '台北市立大安高級工業職業學校近一週已有使用者提供安全回報，目前無安全疑慮。';
+  static const String highContent = '高風險區域 - 請加倍小心並採取防護措施';
+  static const String mediumContent = '中風險區域 - 建議提高警覺';
+  static const String lowContent = '低風險區域 - 目前無特殊安全疑慮';
 }
 
 class RiskMarkerData {
@@ -41,11 +41,11 @@ List<RiskMarkerData> defaultRiskMarkers = [
     title: '高風險',
     content: RiskLevel.highContent,
   ),
-  // 2. 中風險 (黃色光圈 + 綠色標題/叉叉)
+  // 2. 中風險 (黃橘色光圈 + 黃橘色標題/叉叉)
   RiskMarkerData(
     position: const LatLng(25.0210, 121.5350),
-    riskColor: RiskLevel.medium, // 光圈是黃色
-    titleColor: RiskLevel.mediumTitleColor, // 標題/叉叉是綠色
+    riskColor: RiskLevel.medium,
+    titleColor: RiskLevel.mediumTitleColor,
     title: '中風險',
     content: RiskLevel.mediumContent,
   ),
