@@ -8,8 +8,6 @@ import 'ai_assistant_page.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 import '../risk/time_risk_service.dart';
-import '../report/report_model.dart';
-import '../report/report_dialog.dart';
 
 class CaseMapPage extends StatefulWidget {
   const CaseMapPage({super.key});
@@ -45,7 +43,7 @@ class _CaseMapPageState extends State<CaseMapPage> {
   /// 📍 獲取真實 GPS 座標並移動地圖
   Future<void> _getUserLocation() async {
     LatLng? userLatLng = await LocationService.getCurrentLocation();
-    
+
     if (userLatLng != null && mounted) {
       setState(() {
         _currentPosition = userLatLng;
@@ -78,11 +76,11 @@ class _CaseMapPageState extends State<CaseMapPage> {
   Color _getRiskColor(String riskLevel) {
     switch (riskLevel) {
       case 'HIGH':
-        return Color(0xFFE63946);     // 高風險 - 深紅色
+        return Color(0xFFE63946); // 高風險 - 深紅色
       case 'MEDIUM':
-        return Color(0xFFFFA500);     // 中風險 - 黃橘色
+        return Color(0xFFFFA500); // 中風險 - 黃橘色
       case 'LOW':
-        return Color(0xFF1E90FF);     // 低風險 - 道奇藍
+        return Color(0xFF1E90FF); // 低風險 - 道奇藍
       default:
         return Colors.grey;
     }
@@ -91,7 +89,9 @@ class _CaseMapPageState extends State<CaseMapPage> {
   /// 讀取 assets/json/cases.json 並結合時間風險演算
   Future<void> _loadCasesFromJson() async {
     try {
-      final String jsonString = await rootBundle.loadString('assets/json/cases.json');
+      final String jsonString = await rootBundle.loadString(
+        'assets/json/cases.json',
+      );
       final List<dynamic> data = json.decode(jsonString);
 
       List<Marker> loadedMarkers = [];
@@ -103,7 +103,9 @@ class _CaseMapPageState extends State<CaseMapPage> {
         final String location = item['location_name'] ?? '未知地點';
         final String endDate = item['end_date'] ?? '2026-01-01';
 
-        final double riskWeight = TimeRiskService.calculateTimeRiskWeight(endDate);
+        final double riskWeight = TimeRiskService.calculateTimeRiskWeight(
+          endDate,
+        );
         final String riskLevel = TimeRiskService.getRiskLevelString(riskWeight);
 
         final Color riskColor = _getRiskColor(riskLevel);
@@ -171,7 +173,8 @@ class _CaseMapPageState extends State<CaseMapPage> {
             children: [
               // (1) 底層地圖圖資
               TileLayer(
-                urlTemplate: 'https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}',
+                urlTemplate:
+                    'https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}',
                 maxZoom: 20,
                 maxNativeZoom: 19,
                 userAgentPackageName: 'dev.daphne.nopholebia.app',
@@ -179,9 +182,7 @@ class _CaseMapPageState extends State<CaseMapPage> {
 
               // (2) 🖤 黑色質感遮罩
               IgnorePointer(
-                child: Container(
-                  color: Colors.black.withOpacity(0.12),
-                ),
+                child: Container(color: Colors.black.withOpacity(0.12)),
               ),
 
               // (3) 標記圖層
@@ -195,11 +196,7 @@ class _CaseMapPageState extends State<CaseMapPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          Icons.location_on,
-                          color: baseGreen,
-                          size: 32,
-                        ),
+                        Icon(Icons.location_on, color: baseGreen, size: 32),
                         Text(
                           '您的位置',
                           style: TextStyle(
@@ -207,10 +204,7 @@ class _CaseMapPageState extends State<CaseMapPage> {
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
                             shadows: const [
-                              Shadow(
-                                color: Colors.white,
-                                blurRadius: 4,
-                              ),
+                              Shadow(color: Colors.white, blurRadius: 4),
                             ],
                           ),
                         ),
@@ -382,9 +376,7 @@ class _CaseMapPageState extends State<CaseMapPage> {
         ),
         decoration: BoxDecoration(
           color: const Color(0xFFF5F5F5),
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(28),
-          ),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.18),
@@ -398,16 +390,19 @@ class _CaseMapPageState extends State<CaseMapPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  _activeRiskMarker!.title,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: _activeRiskMarker!.titleColor,
+                Expanded(
+                  child: Text(
+                    _activeRiskMarker!.title,
+                    softWrap: true,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: _activeRiskMarker!.titleColor,
+                    ),
                   ),
                 ),
+                const SizedBox(width: 8),
                 GestureDetector(
                   onTap: () {
                     setState(() {
@@ -482,7 +477,8 @@ class _CaseMapPageState extends State<CaseMapPage> {
                 Navigator.pushReplacement(
                   context,
                   PageRouteBuilder(
-                    pageBuilder: (context, anim1, anim2) => const AIAssistantPage(),
+                    pageBuilder: (context, anim1, anim2) =>
+                        const AIAssistantPage(),
                     transitionDuration: Duration.zero,
                   ),
                 );
@@ -496,7 +492,12 @@ class _CaseMapPageState extends State<CaseMapPage> {
     );
   }
 
-  Widget _buildStaticNavItem(String iconPath, String label, bool isSelected, VoidCallback? onTap) {
+  Widget _buildStaticNavItem(
+    String iconPath,
+    String label,
+    bool isSelected,
+    VoidCallback? onTap,
+  ) {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
@@ -523,20 +524,22 @@ class _CaseMapPageState extends State<CaseMapPage> {
               child: SizedBox(
                 width: 54,
                 height: 54,
-                child: Image.asset(
-                  iconPath,
-                  fit: BoxFit.contain,
-                ),
+                child: Image.asset(iconPath, fit: BoxFit.contain),
               ),
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: baseGreen,
-              fontSize: 12,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          SizedBox(
+            width: 72,
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              softWrap: true,
+              style: TextStyle(
+                color: baseGreen,
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
             ),
           ),
         ],
