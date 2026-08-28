@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 // 👈 載入剛才建立的 Services
+import '../detection/detection_result.dart';
 import '../services/location_service.dart';
 import '../services/police_service.dart';
 
@@ -12,12 +13,16 @@ enum RiskLevel { low, medium, high }
 
 class ResultPage extends StatefulWidget {
   final RiskLevel riskLevel;
-  final int score;
+  final double score;
+  final DetectionSessionSummary? scanSummary;
+  final Map<String, dynamic>? backendResult;
 
   const ResultPage({
     super.key,
     this.riskLevel = RiskLevel.low,
     required this.score,
+    this.scanSummary,
+    this.backendResult,
   });
 
   @override
@@ -29,7 +34,7 @@ class _ResultPageState extends State<ResultPage> {
   double _lineY = 0.0;
 
   late RiskLevel _currentRisk;
-  late int _currentScore;
+  late double _currentScore;
 
   // 0 = 初始(生成報案敘述), 1 = 載入中(顯示 Loader 3秒), 2 = 已完成(查看報案敘述)
   int _reportState = 0;
@@ -69,8 +74,16 @@ class _ResultPageState extends State<ResultPage> {
     });
 
     try {
-      // 1. 抓取手機目前 GPS 座標
-      LatLng? userPos = await LocationService.getCurrentLocation();
+      // 1. 優先使用掃描時取得的座標，避免報案內容和掃描地點不一致
+      LatLng? userPos;
+      final scanLatitude = widget.scanSummary?.latitude;
+      final scanLongitude = widget.scanSummary?.longitude;
+
+      if (scanLatitude != null && scanLongitude != null) {
+        userPos = LatLng(scanLatitude, scanLongitude);
+      } else {
+        userPos = await LocationService.getCurrentLocation();
+      }
 
       // 如果抓不到 GPS（例如測試器中或未給權限），給予預設台北市立圖書館/大安區座標
       userPos ??= const LatLng(25.0381, 121.5401);
@@ -101,14 +114,14 @@ class _ResultPageState extends State<ResultPage> {
     setState(() {
       if (_currentRisk == RiskLevel.low) {
         _currentRisk = RiskLevel.medium;
-        _currentScore = 45;
+        _currentScore = 45.0;
       } else if (_currentRisk == RiskLevel.medium) {
         _currentRisk = RiskLevel.high;
-        _currentScore = 88;
+        _currentScore = 88.0;
         _fetchNearestPolice(); // 切到高風險時觸發搜尋警局
       } else {
         _currentRisk = RiskLevel.low;
-        _currentScore = 4;
+        _currentScore = 4.0;
       }
       _reportState = 0;
       WidgetsBinding.instance.addPostFrameCallback((_) => _updateLineY());
@@ -148,6 +161,19 @@ class _ResultPageState extends State<ResultPage> {
 
   // 報案敘述 Bottom Sheet
   void _showReportBottomSheet(BuildContext context) {
+    final String? policeCheatSheet =
+        widget.backendResult?['policeCheatSheet']?.toString() ??
+        widget.backendResult?['police_cheat_sheet']?.toString();
+    final String reportBody =
+        (policeCheatSheet != null && policeCheatSheet.trim().isNotEmpty)
+        ? policeCheatSheet.trim()
+        : '你好，我要報案。\n'
+              '我現在在國立臺北教育大學內，發現疑似遭人安裝針孔攝影機。\n\n'
+              '・ 【具體位置】位於 [請補充實際場館與樓層等地點細節]。\n'
+              '・ 【異常物體】門板上的一面常規塑膠掛鉤。\n'
+              '・ 【異常細節】該掛鉤外殼雖為一般塑料，但上面的固定螺絲有明顯異常。其中一顆十字螺絲的中心深度與光線吸收率遠高於正常金屬螺絲，且經檢測含有異常訊號。\n'
+              '・ 【推薦報案單位】${_nearestPolice?.name ?? '臺北市政府警察局大安分局敦化南路派出所'} (${_nearestPolice?.phone ?? '02-2772-0400'})';
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -230,12 +256,7 @@ class _ResultPageState extends State<ResultPage> {
                                 child: SingleChildScrollView(
                                   controller: scrollController,
                                   child: Text(
-                                    '你好，我要報案。\n'
-                                    '我現在在國立臺北教育大學內，發現疑似遭人安裝針孔攝影機。\n\n'
-                                    '・ 【具體位置】位於 [請補充實際場館與樓層等地點細節]。\n'
-                                    '・ 【異常物體】門板上的一面常規塑膠掛鉤。\n'
-                                    '・ 【異常細節】該掛鉤外殼雖為一般塑料，但上面的固定螺絲有明顯異常。其中一顆十字螺絲的中心深度與光線吸收率遠高於正常金屬螺絲，且經檢測含有異常訊號。\n'
-                                    '・ 【推薦報案單位】${_nearestPolice?.name ?? '臺北市政府警察局大安分局敦化南路派出所'} (${_nearestPolice?.phone ?? '02-2772-0400'})',
+                                    reportBody,
                                     style: const TextStyle(
                                       fontSize: 20,
                                       color: Color(0xFF49454F),
@@ -259,6 +280,13 @@ class _ResultPageState extends State<ResultPage> {
     );
   }
 
+  String _formatScore(double score) {
+    if ((score - score.roundToDouble()).abs() < 0.0001) {
+      return score.toStringAsFixed(0);
+    }
+    return score.toStringAsFixed(1);
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isLow = _currentRisk == RiskLevel.low;
@@ -272,7 +300,9 @@ class _ResultPageState extends State<ResultPage> {
     final String titleText = isLow ? '低風險' : (isMedium ? '中風險' : '高風險');
     final String iconPath = isLow
         ? 'assets/images/Check.png'
-        : (isMedium ? 'assets/images/Alert triangle.png' : 'assets/images/Alert circle.png');
+        : (isMedium
+              ? 'assets/images/Alert triangle.png'
+              : 'assets/images/Alert circle.png');
 
     const Color textContentColor = Color(0xFF49454F);
     const double contentWidth = 280.0;
@@ -283,10 +313,7 @@ class _ResultPageState extends State<ResultPage> {
           // 1. 動態背景
           Positioned.fill(
             child: CustomPaint(
-              painter: RiskBackgroundPainter(
-                lineY: _lineY,
-                isHighRisk: isHigh,
-              ),
+              painter: RiskBackgroundPainter(lineY: _lineY, isHighRisk: isHigh),
             ),
           ),
 
@@ -311,7 +338,8 @@ class _ResultPageState extends State<ResultPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
                                       titleText,
@@ -322,7 +350,11 @@ class _ResultPageState extends State<ResultPage> {
                                         height: 1.0,
                                       ),
                                     ),
-                                    Image.asset(iconPath, width: 20, height: 20),
+                                    Image.asset(
+                                      iconPath,
+                                      width: 20,
+                                      height: 20,
+                                    ),
                                   ],
                                 ),
                                 const SizedBox(height: 8),
@@ -353,7 +385,7 @@ class _ResultPageState extends State<ResultPage> {
                               Positioned(
                                 bottom: 10,
                                 child: Text(
-                                  '$_currentScore%',
+                                  '${_formatScore(_currentScore)}%',
                                   style: TextStyle(
                                     fontSize: 48,
                                     color: themeColor,
@@ -371,11 +403,33 @@ class _ResultPageState extends State<ResultPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _buildListItem(isLow ? '未偵測到紅外線與反光點,' : '偵測到可疑藍芽與 Wi-Fi 訊號較強,', true, textContentColor),
-                              _buildListItem(isLow ? '未偵測到藍芽與 Wi-Fi,' : '建議檢查周遭可疑插座或延長線,', true, textContentColor),
-                              _buildListItem(isLow ? '未偵測到異常磁場,' : '未發現紅外線異常點,', true, textContentColor),
-                              _buildListItem('綜合評估危險指數：$_currentScore%', false, textContentColor),
-                              _buildListItem(isLow ? '您所在環境無隱藏針孔攝影機, 請安心使用。' : '環境存在潛在風險，請謹慎使用。', false, textContentColor),
+                              _buildListItem(
+                                isLow ? '未偵測到紅外線與反光點,' : '偵測到可疑藍芽與 Wi-Fi 訊號較強,',
+                                true,
+                                textContentColor,
+                              ),
+                              _buildListItem(
+                                isLow ? '未偵測到藍芽與 Wi-Fi,' : '建議檢查周遭可疑插座或延長線,',
+                                true,
+                                textContentColor,
+                              ),
+                              _buildListItem(
+                                isLow ? '未偵測到異常磁場,' : '未發現紅外線異常點,',
+                                true,
+                                textContentColor,
+                              ),
+                              _buildListItem(
+                                '綜合評估危險指數：$_currentScore%',
+                                false,
+                                textContentColor,
+                              ),
+                              _buildListItem(
+                                isLow
+                                    ? '您所在環境無隱藏針孔攝影機, 請安心使用。'
+                                    : '環境存在潛在風險，請謹慎使用。',
+                                false,
+                                textContentColor,
+                              ),
                             ],
                           ),
                         ),
@@ -414,10 +468,12 @@ class _ResultPageState extends State<ResultPage> {
                                   onTap: _toggleNextRisk,
                                   behavior: HitTestBehavior.opaque,
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
                                         children: [
                                           Text(
                                             titleText,
@@ -428,7 +484,11 @@ class _ResultPageState extends State<ResultPage> {
                                               height: 1.0,
                                             ),
                                           ),
-                                          Image.asset(iconPath, width: 20, height: 20),
+                                          Image.asset(
+                                            iconPath,
+                                            width: 20,
+                                            height: 20,
+                                          ),
                                         ],
                                       ),
                                       const SizedBox(height: 8),
@@ -459,7 +519,7 @@ class _ResultPageState extends State<ResultPage> {
                                     Positioned(
                                       bottom: 10,
                                       child: Text(
-                                        '$_currentScore%',
+                                        '${_formatScore(_currentScore)}%',
                                         style: TextStyle(
                                           fontSize: 48,
                                           color: themeColor,
@@ -502,9 +562,20 @@ class _ResultPageState extends State<ResultPage> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Image.asset('assets/images/chevron_backward.png', width: 24, height: 24),
+                            Image.asset(
+                              'assets/images/chevron_backward.png',
+                              width: 24,
+                              height: 24,
+                            ),
                             const SizedBox(width: 4),
-                            const Text('返回', style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.w500)),
+                            const Text(
+                              '返回',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -524,8 +595,9 @@ class _ResultPageState extends State<ResultPage> {
     // 📍 預設警局備案（抓取中或無資料時使用）
     final String policeName = _nearestPolice?.name ?? '臺北市政府警察局大安分局敦化南路派出所';
     final String policePhone = _nearestPolice?.phone ?? '02-2772-0400';
-    final String policeDistance = _nearestPolice?.formattedDistance.isNotEmpty == true 
-        ? ' (距離 ${_nearestPolice!.formattedDistance})' 
+    final String policeDistance =
+        _nearestPolice?.formattedDistance.isNotEmpty == true
+        ? ' (距離 ${_nearestPolice!.formattedDistance})'
         : '';
 
     return Column(
@@ -606,12 +678,20 @@ class _ResultPageState extends State<ResultPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   if (_reportState == 1) ...[
-                    Image.asset('assets/images/Loader.png', width: 20, height: 20),
+                    Image.asset(
+                      'assets/images/Loader.png',
+                      width: 20,
+                      height: 20,
+                    ),
                     const SizedBox(width: 8),
                   ],
                   Text(
                     _reportState == 2 ? '查看報案敘述' : '生成報案敘述',
-                    style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
@@ -628,9 +708,22 @@ class _ResultPageState extends State<ResultPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (showDot) const Text('・ ', style: TextStyle(fontSize: 20, color: Color(0xFF395938), fontWeight: FontWeight.bold)),
+          if (showDot)
+            const Text(
+              '・ ',
+              style: TextStyle(
+                fontSize: 20,
+                color: Color(0xFF395938),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           if (!showDot) const SizedBox(width: 18),
-          Expanded(child: Text(text, style: TextStyle(fontSize: 20, color: contentColor, height: 1.35))),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(fontSize: 20, color: contentColor, height: 1.35),
+            ),
+          ),
         ],
       ),
     );
@@ -660,24 +753,47 @@ class RiskBackgroundPainter extends CustomPainter {
       final Color leftColor = const Color(0xFFF5F5F5);
       final Color rightColor = const Color(0xFFF0EEDC);
 
-      canvas.drawRect(Rect.fromLTWH(size.width * 0.5, lineY, size.width * 0.5, size.height - lineY), Paint()..color = rightColor);
-      canvas.drawRect(Rect.fromLTWH(0, lineY, size.width * 0.5, size.height - lineY), Paint()..color = leftColor);
+      canvas.drawRect(
+        Rect.fromLTWH(
+          size.width * 0.5,
+          lineY,
+          size.width * 0.5,
+          size.height - lineY,
+        ),
+        Paint()..color = rightColor,
+      );
+      canvas.drawRect(
+        Rect.fromLTWH(0, lineY, size.width * 0.5, size.height - lineY),
+        Paint()..color = leftColor,
+      );
 
       final topRect = Rect.fromLTWH(0, 0, size.width, lineY);
-      canvas.drawRect(topRect, Paint()..shader = LinearGradient(colors: [leftColor, rightColor]).createShader(topRect));
+      canvas.drawRect(
+        topRect,
+        Paint()
+          ..shader = LinearGradient(
+            colors: [leftColor, rightColor],
+          ).createShader(topRect),
+      );
       canvas.save();
-      canvas.drawRect(topRect, Paint()..color = Colors.white.withOpacity(0.4)..imageFilter = ImageFilter.blur(sigmaX: 10, sigmaY: 10));
+      canvas.drawRect(
+        topRect,
+        Paint()
+          ..color = Colors.white.withOpacity(0.4)
+          ..imageFilter = ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+      );
       canvas.restore();
     }
   }
 
   @override
-  bool shouldRepaint(RiskBackgroundPainter oldDelegate) => oldDelegate.lineY != lineY || oldDelegate.isHighRisk != isHighRisk;
+  bool shouldRepaint(RiskBackgroundPainter oldDelegate) =>
+      oldDelegate.lineY != lineY || oldDelegate.isHighRisk != isHighRisk;
 }
 
 // 圓弧畫筆
 class UniformGaugePainter extends CustomPainter {
-  final int score;
+  final double score;
   final Color color;
   UniformGaugePainter({required this.score, required this.color});
 
@@ -717,5 +833,6 @@ class UniformGaugePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(UniformGaugePainter oldDelegate) => oldDelegate.score != score || oldDelegate.color != color;
+  bool shouldRepaint(UniformGaugePainter oldDelegate) =>
+      oldDelegate.score != score || oldDelegate.color != color;
 }

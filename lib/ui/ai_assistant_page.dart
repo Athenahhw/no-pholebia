@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import 'package:intl/intl.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'scan_page.dart';
 import 'case_map_page.dart'; // 👈 引入案件地圖頁面
@@ -14,6 +16,10 @@ class AIAssistantPage extends StatefulWidget {
 class _AIAssistantPageState extends State<AIAssistantPage> {
   final Color baseGreen = const Color(0xFF395938);
   final Color cardWhite = const Color(0xFFF7F2FA);
+  final String _assistantEndpoint = const String.fromEnvironment(
+    'ASSISTANT_ENDPOINT',
+    defaultValue: 'http://192.168.1.13:8000/api/v1/assistant/query',
+  );
 
   final TextEditingController _dateController = TextEditingController();
   final TextEditingController _placeController = TextEditingController();
@@ -21,6 +27,10 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
 
   bool _showHistory = false;
   bool _showResults = false;
+  bool _isLoading = false;
+  String? _errorMessage;
+  String _locationSummary = '';
+  List<Map<String, String>> _cautionItems = [];
   List<String> _historyList = [];
 
   @override
@@ -50,6 +60,82 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
       if (_historyList.length > 5) _historyList = _historyList.sublist(0, 5);
     });
     await prefs.setStringList('place_history', _historyList);
+  }
+
+  Future<void> _queryAssistant() async {
+    final String destination = _placeController.text.trim().isEmpty
+        ? '國立台北教育大學'
+        : _placeController.text.trim();
+    final String targetDate = _dateController.text.trim().isEmpty
+        ? DateFormat('MM/dd/yyyy').format(DateTime.now())
+        : _dateController.text.trim();
+
+    setState(() {
+      _showResults = true;
+      _isLoading = true;
+      _errorMessage = null;
+      _locationSummary = '';
+      _cautionItems = [];
+    });
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse(_assistantEndpoint),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'targetDate': targetDate,
+              'destination': destination,
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      }
+
+      final Map<String, dynamic> payload =
+          jsonDecode(response.body) as Map<String, dynamic>;
+      final Map<String, dynamic> data =
+          (payload['data'] as Map?)?.cast<String, dynamic>() ?? payload;
+
+      final cautionItemsRaw = data['caution_items'];
+      final List<Map<String, String>> parsedCautionItems =
+          cautionItemsRaw is List
+          ? cautionItemsRaw
+                .whereType<Map>()
+                .map((item) {
+                  final map = item.cast<String, dynamic>();
+                  return {
+                    'title': map['title']?.toString() ?? '',
+                    'detail': map['detail']?.toString() ?? '',
+                  };
+                })
+                .where(
+                  (item) =>
+                      item['title']!.isNotEmpty || item['detail']!.isNotEmpty,
+                )
+                .toList()
+          : <Map<String, String>>[];
+
+      if (!mounted) return;
+      setState(() {
+        _locationSummary =
+            data['location_summary']?.toString() ?? '暫時沒有取得 AI 建議。';
+        _cautionItems = parsedCautionItems;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = '查詢失敗，請稍後再試。\n$e';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   Future<void> _deleteHistoryItem(String targetPlace) async {
@@ -125,7 +211,9 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
               child: Column(
                 children: [
                   Expanded(
-                    child: _showResults ? _buildResultView() : _buildInputView(),
+                    child: _showResults
+                        ? _buildResultView()
+                        : _buildInputView(),
                   ),
                   const SizedBox(height: 100), // 留空給底部導覽列
                 ],
@@ -181,21 +269,27 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: _historyList.map((placeText) => _buildHistoryRow(placeText)).toList(),
+                children: _historyList
+                    .map((placeText) => _buildHistoryRow(placeText))
+                    .toList(),
               ),
             ),
           const SizedBox(height: 20),
           Text(
             '輸入您的差旅行程，系統即刻為您提供安全建議！',
-            style: TextStyle(fontSize: 14, color: baseGreen, fontWeight: FontWeight.w400),
+            style: TextStyle(
+              fontSize: 14,
+              color: baseGreen,
+              fontWeight: FontWeight.w400,
+            ),
           ),
           const SizedBox(height: 36),
           Center(
             child: _buildSearchButton(
-              onTap: () {
+              onTap: () async {
                 _saveHistory(_placeController.text);
                 FocusScope.of(context).unfocus();
-                setState(() => _showResults = true);
+                await _queryAssistant();
               },
             ),
           ),
@@ -206,6 +300,79 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
 
   // --- 模式 B: 查詢結果介面 ---
   Widget _buildResultView() {
+    final String placeTitle = _placeController.text.isEmpty
+        ? '國立台北教育大學'
+        : _placeController.text;
+
+    final List<Widget> resultChildren = [const SizedBox(height: 40)];
+
+    if (_isLoading) {
+      resultChildren.add(
+        const Padding(
+          padding: EdgeInsets.only(top: 80),
+          child: CircularProgressIndicator(color: Color(0xFF395938)),
+        ),
+      );
+    } else if (_errorMessage != null) {
+      resultChildren.add(
+        _buildInfoCard(
+          title: '查詢失敗',
+          titleColor: Colors.white,
+          content: _errorMessage!,
+          contentColor: Colors.white.withOpacity(0.9),
+          isDark: true,
+        ),
+      );
+    } else {
+      resultChildren.addAll([
+        // 卡片 1: 地點簡述 (動態寬度：離兩側 45px)
+        _buildInfoCard(
+          title: placeTitle,
+          titleColor: baseGreen,
+          content: _locationSummary.isEmpty
+              ? '目前暫無可顯示的地點摘要。'
+              : _locationSummary,
+          contentColor: const Color(0xFF49454F),
+          isDark: false,
+        ),
+        const SizedBox(height: 30),
+        // 卡片 2: 應著重檢查物 (動態寬度：離兩側 45px)
+        _buildInfoCard(
+          title: '請著重檢查以下物品',
+          titleColor: const Color(0xFFF0EEDC),
+          content: _cautionItems.isEmpty
+              ? '目前沒有取得具體檢查項目，請留意插座、掛勾、芳香劑與煙霧偵測器等常見遮蔽物。'
+              : _cautionItems
+                    .map((item) {
+                      final title = item['title'] ?? '';
+                      final detail = item['detail'] ?? '';
+                      if (title.isEmpty) return detail;
+                      if (detail.isEmpty) return title;
+                      return '$title\n$detail';
+                    })
+                    .join('\n\n'),
+          contentColor: Colors.white.withOpacity(0.9),
+          isDark: true,
+        ),
+        const SizedBox(height: 20),
+        Text(
+          '祝您旅途愉快，No Pholebia 關心您。',
+          style: TextStyle(color: baseGreen, fontSize: 14),
+        ),
+        const SizedBox(height: 30),
+
+        // 精確 96 * 33 的返回按鈕
+        _buildReturnButton(
+          onTap: () => setState(() {
+            _showResults = false;
+            _errorMessage = null;
+            _isLoading = false;
+          }),
+        ),
+        const SizedBox(height: 60),
+      ]);
+    }
+
     return ShaderMask(
       shaderCallback: (Rect bounds) {
         return const LinearGradient(
@@ -216,41 +383,7 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
         ).createShader(bounds);
       },
       blendMode: BlendMode.dstIn,
-      child: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 40),
-            // 卡片 1: 地點簡述 (動態寬度：離兩側 45px)
-            _buildInfoCard(
-              title: _placeController.text.isEmpty ? '國立台北教育大學' : _placeController.text,
-              titleColor: baseGreen,
-              content: '根據案件地圖資料庫，篤行樓3樓、4樓與科學館3樓女廁，近三月曾有被安裝過針孔攝影機的疑慮，目前已拆除，請留意四周環境。',
-              contentColor: const Color(0xFF49454F),
-              isDark: false,
-            ),
-            const SizedBox(height: 30),
-            // 卡片 2: 應著重檢查物 (動態寬度：離兩側 45px)
-            _buildInfoCard(
-              title: '請著重檢查以下物品',
-              titleColor: const Color(0xFFF0EEDC),
-              content: '1.芳香劑：\n  市售常見的圓罐狀、方盒狀或掛壁式塑膠芳香噴霧器，表面通常只有均勻的散香孔或噴嘴，若發現一厘米大小的黑色圓型不明物，請拿衛生紙包住或轉向牆壁。\n\n'
-                  '2.掛勾：\n  多為白色、黑色或銀色塑膠黏貼式衣帽掛鉤，通常安裝在更衣室、廁所門板或牆壁上。若發現厚度比一般掛鉤更厚、更重，或上方有一個異常的微小光學圓孔，請將衣物掛在掛鉤上遮擋鏡頭。\n\n'
-                  '3.煙霧偵測器：\n  安裝在天花板上的圓盤狀白色設備，四周通常帶有格狀的進氣孔，並配有正常的 LED 狀態指示燈。因肉眼難以辨識，建議啟用一鍵掃描功能偵測，若有異常應立即通報。',
-              contentColor: Colors.white.withOpacity(0.9),
-              isDark: true,
-            ),
-            const SizedBox(height: 20),
-            Text('祝您旅途愉快，No Pholebia 關心您。', style: TextStyle(color: baseGreen, fontSize: 14)),
-            const SizedBox(height: 30),
-            
-            // 精確 96 * 33 的返回按鈕
-            _buildReturnButton(
-              onTap: () => setState(() => _showResults = false),
-            ),
-            const SizedBox(height: 60),
-          ],
-        ),
-      ),
+      child: SingleChildScrollView(child: Column(children: resultChildren)),
     );
   }
 
@@ -297,11 +430,7 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
             const SizedBox(height: 20),
             Text(
               content,
-              style: TextStyle(
-                fontSize: 15,
-                height: 1.5,
-                color: contentColor,
-              ),
+              style: TextStyle(fontSize: 15, height: 1.5, color: contentColor),
             ),
           ],
         ),
@@ -360,7 +489,11 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
                 'assets/images/chevron_backward.png',
                 fit: BoxFit.contain,
                 errorBuilder: (context, error, stackTrace) {
-                  return const Icon(Icons.arrow_back, size: 18, color: Colors.white);
+                  return const Icon(
+                    Icons.arrow_back,
+                    size: 18,
+                    color: Colors.white,
+                  );
                 },
               ),
             ),
@@ -395,12 +528,21 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
               height: 23,
               child: Image.asset(
                 'assets/images/History.png',
-                errorBuilder: (context, error, stackTrace) => Icon(Icons.history, size: 20, color: baseGreen),
+                errorBuilder: (context, error, stackTrace) =>
+                    Icon(Icons.history, size: 20, color: baseGreen),
               ),
             ),
             const SizedBox(width: 10),
-            Expanded(child: Text(text, style: const TextStyle(color: Color(0xFF49454F), fontSize: 16))),
-            GestureDetector(onTap: () => _deleteHistoryItem(text), child: const Icon(Icons.close, size: 18, color: Colors.grey)),
+            Expanded(
+              child: Text(
+                text,
+                style: const TextStyle(color: Color(0xFF49454F), fontSize: 16),
+              ),
+            ),
+            GestureDetector(
+              onTap: () => _deleteHistoryItem(text),
+              child: const Icon(Icons.close, size: 18, color: Colors.grey),
+            ),
           ],
         ),
       ),
@@ -430,10 +572,19 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
         floatingLabelBehavior: FloatingLabelBehavior.always,
         filled: true,
         fillColor: Colors.transparent,
-        enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: baseGreen, width: 2), borderRadius: BorderRadius.circular(8)),
-        focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: baseGreen, width: 2.5), borderRadius: BorderRadius.circular(8)),
+        enabledBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: baseGreen, width: 2),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: baseGreen, width: 2.5),
+          borderRadius: BorderRadius.circular(8),
+        ),
         suffixIcon: Icon(suffixIcon, color: const Color(0xFF49454F)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 18,
+        ),
       ),
     );
   }
@@ -495,7 +646,12 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
     );
   }
 
-  Widget _buildStaticNavItem(String iconPath, String label, bool isSelected, VoidCallback? onTap) {
+  Widget _buildStaticNavItem(
+    String iconPath,
+    String label,
+    bool isSelected,
+    VoidCallback? onTap,
+  ) {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque, // 確保點擊範圍包含空白處
@@ -522,10 +678,7 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
               child: SizedBox(
                 width: 54,
                 height: 54,
-                child: Image.asset(
-                  iconPath,
-                  fit: BoxFit.contain,
-                ),
+                child: Image.asset(iconPath, fit: BoxFit.contain),
               ),
             ),
           ),

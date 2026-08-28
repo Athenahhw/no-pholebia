@@ -13,6 +13,7 @@ import 'network_scan_service.dart';
 import 'bluetooth_scan_service.dart';
 import 'detection_backend_client.dart';
 import 'detection_result.dart';
+import '../services/location_service.dart';
 import 'image_converter.dart'; // 匯入轉換工具
 
 class ScanScreen extends StatefulWidget {
@@ -246,6 +247,7 @@ class _ScanScreenState extends State<ScanScreen> {
         .where((g) => (g.flickerScore ?? 0) > 5.0)
         .length;
 
+    final userLocation = await LocationService.getCurrentLocation();
     final networkDevices = await networkFuture;
     final bluetoothDevices = await bluetoothFuture;
 
@@ -262,8 +264,8 @@ class _ScanScreenState extends State<ScanScreen> {
       screenshotBase64: _finalScreenshotBase64,
       networkDevices: networkDevices,
       bluetoothDevices: bluetoothDevices,
-      latitude: null,
-      longitude: null,
+      latitude: userLocation?.latitude,
+      longitude: userLocation?.longitude,
       scanStartedAt: _scanStartedAt ?? DateTime.now(),
       scanEndedAt: DateTime.now(),
     );

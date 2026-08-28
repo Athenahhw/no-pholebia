@@ -115,7 +115,7 @@ class _ScanPageState extends State<ScanPage>
     return 1.0;
   }
 
-  (RiskLevel, int) _buildResultFrom(
+  (RiskLevel, double) _buildResultFrom(
     DetectionSessionSummary summary,
     Map<String, dynamic>? backendResult,
   ) {
@@ -126,8 +126,8 @@ class _ScanPageState extends State<ScanPage>
         'medium' => RiskLevel.medium,
         _ => RiskLevel.low,
       };
-      final score = ((backendResult['riskPercentage'] as num?)?.round() ?? 0)
-          .clamp(0, 35);
+      final score =
+          (backendResult['riskPercentage'] as num?)?.toDouble() ?? 0.0;
       return (level, score);
     }
 
@@ -154,7 +154,7 @@ class _ScanPageState extends State<ScanPage>
     final adjustedScore =
         rawScore * _environmentMultiplier(summary.environmentContext);
     final probability = 1 / (1 + math.exp(-adjustedScore));
-    final score = (probability * 100).round().clamp(0, 35);
+    final score = probability * 100;
 
     final level = score >= 30
         ? RiskLevel.high
@@ -178,8 +178,12 @@ class _ScanPageState extends State<ScanPage>
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (context) =>
-                    ResultPage(riskLevel: result.$1, score: result.$2),
+                builder: (context) => ResultPage(
+                  riskLevel: result.$1,
+                  score: result.$2,
+                  scanSummary: summary,
+                  backendResult: backendResult,
+                ),
               ),
             );
           },
