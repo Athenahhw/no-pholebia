@@ -8,6 +8,7 @@ import 'ai_assistant_page.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 import '../risk/time_risk_service.dart';
+import 'package:http/http.dart' as http;
 
 class CaseMapPage extends StatefulWidget {
   const CaseMapPage({super.key});
@@ -30,8 +31,14 @@ class _CaseMapPageState extends State<CaseMapPage> {
   RiskMarkerData? _activeRiskMarker;
   bool _showBottomCard = false;
 
-  // 存放動態從 cases.json 產生的地圖標籤
+  // 存放動態從 cases.json 或後端取得的地圖標籤
   List<Marker> _jsonCaseMarkers = [];
+
+  // API 基底位址，可由編譯參數覆寫
+  final String _apiBase = const String.fromEnvironment(
+    'API_BASE',
+    defaultValue: 'http://192.168.1.13:8000',
+  );
 
   @override
   void initState() {
@@ -86,15 +93,111 @@ class _CaseMapPageState extends State<CaseMapPage> {
     }
   }
 
-  /// 讀取 assets/json/cases.json 並結合時間風險演算
+  /// 讀取後端已核准案件，若失敗則退回讀取 assets/json/cases.json
   Future<void> _loadCasesFromJson() async {
+    List<Marker> loadedMarkers = [];
+
+    // 1) 嘗試從後端抓取已核准案件
+    try {
+      final uri = Uri.parse(''
+          '${_apiBase.replaceAll(RegExp(r"/+"), '')}/api/v1/records/approved-for-map'');
+      final resp = await http.get(uri).timeout(const Duration(seconds: 6));
+      if (resp.statusCode == 200) {
+        final Map<String, dynamic> body = json.decode(resp.body);
+        final List<dynamic> cases = (body['cases'] as List<dynamic>?) ?? [];
+
+        for (var item in cases) {
+          try {
+            // 優先使用原始 request 中的座標 (payload 使用 camelCase)
+            final rawReq = (item['raw_request'] as Map?)?.cast<String, dynamic>() ?? {};
+            final rawResp = (item['raw_response'] as Map?)?.cast<String, dynamic>() ?? {};
+
+            final latVal = rawReq['latitude'] ?? rawReq['lat'] ?? item['latitude'];
+            final lngVal = rawReq['longitude'] ?? rawReq['lng'] ?? item['longitude'];
+
+            if (latVal == null || lngVal == null) continue; // 沒座標就略過
+
+            final double lat = (latVal as num).toDouble();
+            final double lng = (lngVal as num).toDouble();
+
+            final String title = (item['environment_context'] as String?) ?? rawReq['environmentContext'] ?? '未命名案件';
+            final String location = title;
+            final String endDate = (item['created_at'] as String?) ?? item['createdAt'] ?? DateTime.now().toIso8601String();
+
+            // 時間權重(沿用原本時間風險演算)
+            final double riskWeight = TimeRiskService.calculateTimeRiskWeight(
+              endDate,
+            );
+            String riskLevel = TimeRiskService.getRiskLevelString(riskWeight);
+
+            // 若後端提供 risk_level, 以後端為準且轉為大寫
+            final backendRisk = (item['risk_level'] as String?) ?? (rawResp['risk_level'] as String?) ?? (item['riskLevel'] as String?) ?? (rawResp['riskLevel'] as String?);
+            if (backendRisk != null && backendRisk.trim().isNotEmpty) {
+              riskLevel = backendRisk.toUpperCase();
+            }
+
+            final Color riskColor = _getRiskColor(riskLevel);
+
+            loadedMarkers.add(
+              Marker(
+                point: LatLng(lat, lng),
+                width: 74,
+                height: 74,
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _showHintCard = false;
+                      _activeRiskMarker = RiskMarkerData(
+                        position: LatLng(lat, lng),
+                        riskColor: riskColor,
+                        title: _getRiskLevelChinese(riskLevel),
+                        titleColor: riskColor,
+                        content: '地點：$location\n事件：$title\n發生時間：$endDate',
+                      );
+                      _showBottomCard = true;
+                    });
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          riskColor.withOpacity(0.9),
+                          riskColor.withOpacity(0.1),
+                        ],
+                        stops: const [0.3, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          } catch (e) {
+            // 個別案件處理錯誤不應阻斷整體流程
+            print('處理後端案件時發生錯誤: $e');
+            continue;
+          }
+        }
+
+        if (mounted) {
+          setState(() {
+            _jsonCaseMarkers = loadedMarkers;
+          });
+        }
+        return;
+      } else {
+        print('從後端取得已核准案件失敗 (HTTP ${resp.statusCode})');
+      }
+    } catch (e) {
+      print('從後端取得已核准案件失敗: $e');
+    }
+
+    // 2) 後端失敗 -> 回退使用內建 assets/json/cases.json
     try {
       final String jsonString = await rootBundle.loadString(
         'assets/json/cases.json',
       );
       final List<dynamic> data = json.decode(jsonString);
-
-      List<Marker> loadedMarkers = [];
 
       for (var item in data) {
         final double lat = (item['latitude'] as num).toDouble();
