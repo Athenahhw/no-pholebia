@@ -99,8 +99,9 @@ class _CaseMapPageState extends State<CaseMapPage> {
 
     // 1) 嘗試從後端抓取已核准案件
     try {
-      final uri = Uri.parse(''
-          '${_apiBase.replaceAll(RegExp(r"/+"), '')}/api/v1/records/approved-for-map'');
+      // Normalize api base by removing only a trailing slash to avoid removing http://
+      final apiBaseNormalized = _apiBase.replaceAll(RegExp(r'/$'), '');
+      final uri = Uri.parse('$apiBaseNormalized/api/v1/records/approved-for-map');
       final resp = await http.get(uri).timeout(const Duration(seconds: 6));
       if (resp.statusCode == 200) {
         final Map<String, dynamic> body = json.decode(resp.body);
