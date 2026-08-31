@@ -131,8 +131,6 @@ class _ScanPageState extends State<ScanPage>
       return (level, score);
     }
 
-    // 與 backend/tms_engine.py 保持一致的本地估算公式。
-    // 只有明確疑似攝影機 / 可疑藍牙才算高風險，避免家裡普通 Wi‑Fi 或藍牙設備被誤判。
     final wifiDetected = summary.networkDevices.any((d) => d.looksLikeCamera);
     final bluetoothDetected = summary.bluetoothDevices.any((d) => d.suspicious);
     final opticalGlintScore = (summary.highRiskGlintCount * 0.5).clamp(

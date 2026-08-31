@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math; // 👈 匯入數學函式庫算加速度
+import 'dart:math' as math; 
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:image/image.dart' as img;
-import 'package:sensors_plus/sensors_plus.dart'; // 👈 匯入感測器套件
+import 'package:sensors_plus/sensors_plus.dart'; 
 
 import 'camera_service.dart';
 import 'glint_detector.dart';
@@ -57,7 +57,6 @@ class _ScanScreenState extends State<ScanScreen> {
   bool _isFirstFrame = true;
   DateTime? _scanStartedAt;
 
-  // 👈 新增：用於控制計時器與晃動警告的變數
   Timer? _scanTimer;
   Timer? _scanBeamTimer;
   StreamSubscription<UserAccelerometerEvent>? _accelSubscription;
@@ -83,14 +82,11 @@ class _ScanScreenState extends State<ScanScreen> {
 
       _scanStartedAt = DateTime.now(); // 記錄掃描開始時間
 
-      // 1. 同時啟動背景的 Wi-Fi 與藍牙掃描
       _networkFuture = _networkScanner.scan();
       _bluetoothFuture = _bluetoothScanner.scan();
 
-      // 2. 啟動相機影像串流
       await _cameraService.startImageStream(_processFrame);
 
-      // 3. 啟動防震監聽與計時器 (取代原本寫死的 Timer)
       _startMotionDetection();
       _startTimer();
       _startScanBeamAnimation();
@@ -190,7 +186,7 @@ class _ScanScreenState extends State<ScanScreen> {
 
   /// 處理每一幀畫面
   Future<void> _processFrame(CameraImage cameraImage) async {
-    if (_showShakeWarning) return; // 👈 晃動警告期間不處理影像，避免雜訊
+    if (_showShakeWarning) return; 
 
     // 修正：直接呼叫頂層函式 convertCameraImage
     final img.Image? frameImage = convertCameraImage(cameraImage);
@@ -380,7 +376,6 @@ class _ScanScreenState extends State<ScanScreen> {
                     '$_timeLeft',
                     style: TextStyle(
                       fontSize: 80,
-                      // 👈 如果正在警告，數字變紅色提醒
                       color: _showShakeWarning
                           ? Colors.redAccent
                           : Colors.white,
