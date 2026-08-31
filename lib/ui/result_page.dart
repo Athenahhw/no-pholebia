@@ -415,7 +415,7 @@ class _ResultPageState extends State<ResultPage> {
                                 textContentColor,
                               ),
                               _buildListItem(
-                                '綜合評估危險指數：$_currentScore%',
+                                '綜合評估危險指數：${_currentScore.toStringAsFixed(2)}%',
                                 false,
                                 textContentColor,
                               ),
