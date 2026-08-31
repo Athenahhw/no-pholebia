@@ -47,10 +47,10 @@ def generate_safety_plan_with_prompt(
     2. 無線裝置偵測為加分項，無偵測到不代表完全安全。
 
     你必須 strictly 回傳標準 JSON 格式，包含以下 6 個 Key：
-    1. "risk_level": "high" | "medium" | "low"
-    2. "risk_percentage": 數字 (0 ~ 100)
+    1. "risk_level": "high" | "medium" | "low"，高風險是30%以上，低風險是15%以下，中風險介於兩者之間，請以低風險為主。
+    2. "risk_percentage": 數字 (0 ~ 35)，做最保守的判斷，不要輕易提供高於 30% 的風險機率。
     3. "risk_assessment_summary": 【風險評估文案】詳細分析為何此環境與物品有此風險，說明反光與無線訊號特徵。
-    4. "police_cheat_sheet": 【報案敘述文案】50 字以內，方便使用者直接唸給警察聽。需提及座標 (lat, lng) 與具體物品位置。
+    4. "police_cheat_sheet": 【報案敘述文案】50 字以內，方便使用者直接唸給警察聽。需提及地點與具體物品位置。
     5. "ai_assistant_summary": 【AI 助理查詢結果文案】給使用者的白話解答總結與防護情境說明。
     6. "action_cards": 陣列，包含 3 點具體實體處置建議（例如遮蔽、檢查）。
     """
