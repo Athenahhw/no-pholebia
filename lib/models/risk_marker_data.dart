@@ -3,12 +3,12 @@ import 'package:latlong2/latlong.dart';
 
 // 定義風險等級的顏色與內容
 class RiskLevel {
-  static const Color high = Color(0xFFE63946);        // 深紅色 #E63946
-  static const Color medium = Color(0xFFFFA500);      // 黃橘色 #FFA500
-  static const Color low = Color(0xFF1E90FF);         // 道奇藍 #1E90FF
+  static const Color high = Color(0xFFFF45D7);        // 高風險 #FF45D7
+  static const Color medium = Color(0xFFFFFF45);      // 中風險 #FFFF45
+  static const Color low = Color(0xFF4583FF);         // 低風險 #4583FF
 
   // 標題顏色定義
-  static const Color mediumTitleColor = Color(0xFFFFA500); // 中風險文字用黃橘色
+  static const Color mediumTitleColor = Color(0xFFFFFF45); // 中風險文字用黃色
 
   static const String highContent = '高風險區域 - 請加倍小心並採取防護措施';
   static const String mediumContent = '中風險區域 - 建議提高警覺';
@@ -41,7 +41,7 @@ List<RiskMarkerData> defaultRiskMarkers = [
     title: '高風險',
     content: RiskLevel.highContent,
   ),
-  // 2. 中風險 (黃橘色光圈 + 黃橘色標題/叉叉)
+  // 2. 中風險 (黃色光圈 + 黃色標題/叉叉)
   RiskMarkerData(
     position: const LatLng(25.0210, 121.5350),
     riskColor: RiskLevel.medium,
