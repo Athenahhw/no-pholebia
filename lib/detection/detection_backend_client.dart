@@ -13,7 +13,7 @@ class DetectionBackendClient {
 
   DetectionBackendClient({
     String? endpoint,
-    this.timeout = const Duration(seconds: 10),
+    this.timeout = const Duration(seconds: 20),
   }) : endpoint =
            endpoint ??
            const String.fromEnvironment(

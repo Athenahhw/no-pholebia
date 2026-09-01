@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import 'dart:ui';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -14,6 +16,7 @@ enum RiskLevel { low, medium, high }
 class ResultPage extends StatefulWidget {
   final RiskLevel riskLevel;
   final double score;
+  final bool isBackendScore;
   final DetectionSessionSummary? scanSummary;
   final Map<String, dynamic>? backendResult;
 
@@ -21,6 +24,7 @@ class ResultPage extends StatefulWidget {
     super.key,
     this.riskLevel = RiskLevel.low,
     required this.score,
+    this.isBackendScore = false,
     this.scanSummary,
     this.backendResult,
   });
@@ -153,12 +157,12 @@ class _ResultPageState extends State<ResultPage> {
         widget.backendResult?['police_cheat_sheet']?.toString();
     final String reportBody =
         (policeCheatSheet != null && policeCheatSheet.trim().isNotEmpty)
-            ? policeCheatSheet.trim()
-            : '你好，我要報案。\n'
-                '我現在在國立臺北教育大學內，發現疑似遭人安裝針孔攝影機。\n\n'
-                '・ 【具體位置】位於 [請補充實際場館與樓層等地點細節]。\n'
-                '・ 【異常物體】門板上的一面常規塑膠掛鉤。\n'
-                '・ 【異常細節】該掛鉤外殼雖為一般塑料，但上面的固定螺絲有明顯異常。其中一顆十字螺絲的中心深度與光線吸收率遠高於正常金屬螺絲，且經檢測含有異常訊號。';
+        ? policeCheatSheet.trim()
+        : '你好，我要報案。\n'
+              '我現在在國立臺北教育大學內，發現疑似遭人安裝針孔攝影機。\n\n'
+              '・ 【具體位置】位於 [請補充實際場館與樓層等地點細節]。\n'
+              '・ 【異常物體】門板上的一面常規塑膠掛鉤。\n'
+              '・ 【異常細節】該掛鉤外殼雖為一般塑料，但上面的固定螺絲有明顯異常。其中一顆十字螺絲的中心深度與光線吸收率遠高於正常金屬螺絲，且經檢測含有異常訊號。';
 
     showModalBottomSheet(
       context: context,
@@ -209,8 +213,11 @@ class _ResultPageState extends State<ResultPage> {
                                   'assets/images/Info.png',
                                   width: 20,
                                   height: 20,
-                                  errorBuilder: (ctx, err, stack) =>
-                                      const Icon(Icons.info_outline, color: Color(0xFF395938), size: 20),
+                                  errorBuilder: (ctx, err, stack) => const Icon(
+                                    Icons.info_outline,
+                                    color: Color(0xFF395938),
+                                    size: 20,
+                                  ),
                                 ),
                                 const SizedBox(width: 8),
                                 const Expanded(
@@ -275,6 +282,27 @@ class _ResultPageState extends State<ResultPage> {
     return score.toStringAsFixed(1);
   }
 
+  String _riskSummaryText() {
+    final aiSection = widget.backendResult?['ai_reasoning_and_actions'];
+    if (aiSection is Map) {
+      final summary = aiSection['risk_assessment_summary']?.toString();
+      if (summary != null && summary.trim().isNotEmpty) {
+        return '${summary.trim()}\n綜合評估危險指數：${_formatScore(_currentScore)}%\n\n請勿慌張或破壞犯罪現場，使用衛生紙或衣物遮蔽該處即可。';
+      }
+    }
+    return '偵測到非對稱的幾何小黑孔與微光特徵，該掛鉤外殼雖為常規塑料，但其中一顆十字螺絲的中心深度與光線吸收率，遠高於正常金屬螺絲，疑似為「螺絲型微型鏡頭」之偽裝。\n綜合評估危險指數：${_formatScore(_currentScore)}%\n\n請勿慌張或破壞犯罪現場，使用衛生紙或衣物遮蔽該處即可。';
+  }
+
+  Uint8List? _decodeBase64Image(String? encoded) {
+    if (encoded == null || encoded.trim().isEmpty) return null;
+    final raw = encoded.contains(',') ? encoded.split(',').last : encoded;
+    try {
+      return base64Decode(raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isLow = _currentRisk == RiskLevel.low;
@@ -289,8 +317,8 @@ class _ResultPageState extends State<ResultPage> {
     final String iconPath = isLow
         ? 'assets/images/Check.png'
         : (isMedium
-            ? 'assets/images/Alert triangle.png'
-            : 'assets/images/Alert circle.png');
+              ? 'assets/images/Alert triangle.png'
+              : 'assets/images/Alert circle.png');
 
     const Color textContentColor = Color(0xFF49454F);
     const double contentWidth = 280.0;
@@ -340,7 +368,9 @@ class _ResultPageState extends State<ResultPage> {
                                     width: 20,
                                     height: 20,
                                     errorBuilder: (ctx, err, stack) => Icon(
-                                      isLow ? Icons.check_circle : Icons.warning_amber_rounded,
+                                      isLow
+                                          ? Icons.check_circle
+                                          : Icons.warning_amber_rounded,
                                       color: themeColor,
                                       size: 20,
                                     ),
@@ -389,7 +419,11 @@ class _ResultPageState extends State<ResultPage> {
                         const SizedBox(height: 12),
 
                         // 📱 可滑動面板（寬度 280，5% 主題色底色）
-                        _buildSwipeableDetectionCards(contentWidth, themeColor, textContentColor),
+                        _buildSwipeableDetectionCards(
+                          contentWidth,
+                          themeColor,
+                          textContentColor,
+                        ),
 
                         const SizedBox(height: 16),
 
@@ -461,8 +495,7 @@ class _ResultPageState extends State<ResultPage> {
                               SizedBox(
                                 width: contentWidth,
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
                                       mainAxisAlignment:
@@ -482,7 +515,11 @@ class _ResultPageState extends State<ResultPage> {
                                           width: 20,
                                           height: 20,
                                           errorBuilder: (ctx, err, stack) =>
-                                              Icon(Icons.error_outline, color: themeColor, size: 20),
+                                              Icon(
+                                                Icons.error_outline,
+                                                color: themeColor,
+                                                size: 20,
+                                              ),
                                         ),
                                       ],
                                     ),
@@ -560,8 +597,11 @@ class _ResultPageState extends State<ResultPage> {
                               'assets/images/chevron_backward.png',
                               width: 20,
                               height: 20,
-                              errorBuilder: (ctx, err, stack) =>
-                                  const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 16),
+                              errorBuilder: (ctx, err, stack) => const Icon(
+                                Icons.arrow_back_ios_new,
+                                color: Colors.white,
+                                size: 16,
+                              ),
                             ),
                             const SizedBox(width: 4),
                             const Text(
@@ -587,13 +627,23 @@ class _ResultPageState extends State<ResultPage> {
   }
 
   // 📱 滑動面板 Widget（反光點 / WiFi / 藍芽）
-  Widget _buildSwipeableDetectionCards(double width, Color themeColor, Color textColor) {
+  Widget _buildSwipeableDetectionCards(
+    double width,
+    Color themeColor,
+    Color textColor,
+  ) {
     final summary = widget.scanSummary;
-    final bool hasGlint = (summary != null && (summary.highRiskGlintCount > 0 || summary.glints.isNotEmpty)) ||
+    final bool hasGlint =
+        (summary != null &&
+            (summary.highRiskGlintCount > 0 || summary.glints.isNotEmpty)) ||
         (_currentRisk == RiskLevel.medium);
-    final bool hasSuspiciousWifi = (summary != null && summary.networkDevices.any((d) => d.looksLikeCamera)) ||
+    final bool hasSuspiciousWifi =
+        (summary != null &&
+            summary.networkDevices.any((d) => d.looksLikeCamera)) ||
         (_currentRisk == RiskLevel.medium);
-    final bool hasSuspiciousBle = (summary != null && summary.bluetoothDevices.any((d) => d.suspicious)) ||
+    final bool hasSuspiciousBle =
+        (summary != null &&
+            summary.bluetoothDevices.any((d) => d.suspicious)) ||
         (_currentRisk == RiskLevel.medium);
 
     final List<Map<String, dynamic>> cardsData = [
@@ -638,7 +688,10 @@ class _ResultPageState extends State<ResultPage> {
             itemBuilder: (context, index) {
               final card = cardsData[index];
               return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16.0,
+                  vertical: 12.0,
+                ),
                 child: Row(
                   children: [
                     // 左側圖片區塊（支援 Assets 與毀損 fallback 內建圖示）
@@ -718,14 +771,14 @@ class _ResultPageState extends State<ResultPage> {
     final String policePhone = _nearestPolice?.phone ?? '02-2772-0400';
     final String policeDistance =
         _nearestPolice?.formattedDistance.isNotEmpty == true
-            ? ' (距離 ${_nearestPolice!.formattedDistance})'
-            : '';
+        ? ' (距離 ${_nearestPolice!.formattedDistance})'
+        : '';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '偵測到非對稱的幾何小黑孔與微光特徵，該掛鉤外殼雖為常規塑料，但其中一顆十字螺絲的中心深度與光線吸收率，遠高於正常金屬螺絲，疑似為「螺絲型微型鏡頭」之偽裝。\n綜合評估危險指數：88%\n\n請勿慌張或破壞犯罪現場，使用衛生紙或衣物遮蔽該處即可。',
+          _riskSummaryText(),
           style: TextStyle(fontSize: 16, color: textColor, height: 1.45),
         ),
         const SizedBox(height: 16),
@@ -734,12 +787,21 @@ class _ResultPageState extends State<ResultPage> {
         Container(
           width: double.infinity,
           height: 160,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            image: const DecorationImage(
-              image: AssetImage('assets/images/evidence.png'),
-              fit: BoxFit.cover,
-            ),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
+          clipBehavior: Clip.antiAlias,
+          child: Builder(
+            builder: (context) {
+              final bytes = _decodeBase64Image(
+                widget.scanSummary?.screenshotBase64,
+              );
+              if (bytes != null) {
+                return Image.memory(bytes, fit: BoxFit.cover);
+              }
+              return Image.asset(
+                'assets/images/evidence.png',
+                fit: BoxFit.cover,
+              );
+            },
           ),
         ),
         const SizedBox(height: 20),
@@ -758,8 +820,11 @@ class _ResultPageState extends State<ResultPage> {
                   'assets/images/Download.png',
                   width: 18,
                   height: 18,
-                  errorBuilder: (ctx, err, stack) =>
-                      const Icon(Icons.download, size: 18, color: Color(0xFF395938)),
+                  errorBuilder: (ctx, err, stack) => const Icon(
+                    Icons.download,
+                    size: 18,
+                    color: Color(0xFF395938),
+                  ),
                 ),
               ),
             ],
@@ -808,7 +873,10 @@ class _ResultPageState extends State<ResultPage> {
                       errorBuilder: (ctx, err, stack) => const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),

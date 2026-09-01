@@ -1,6 +1,7 @@
 import json
 from tms_engine import calculate_threat_score
 from llm_agent import generate_safety_plan_with_prompt
+import storage
 
 def _summarize_suspicious_item(payload) -> str:
     """
@@ -103,14 +104,25 @@ def run_anti_pinhole_inference(payload) -> dict:
     ai_summary = llm_result.get("ai_assistant_summary", "")
 
     llm_risk_percentage = float(llm_result.get("risk_percentage", threat_result["risk_percentage"]))
-    final_risk_percentage = min(llm_risk_percentage, 35.0)
-    final_risk_level = "high" if final_risk_percentage >= 30.0 else "medium" if final_risk_percentage >= 15.0 else "low"
+    final_risk_percentage = min(max(llm_risk_percentage, 0.0), 30.0)
+    score_source = "backend_ai"
+
+    override_payload = storage.consume_next_risk_override()
+    if override_payload is not None:
+        try:
+            final_risk_percentage = min(max(float(override_payload.get("risk_percentage", final_risk_percentage)), 0.0), 30.0)
+            score_source = "backend_admin_override"
+        except Exception:
+            pass
+
+    final_risk_level = "high" if final_risk_percentage >= 25.0 else "medium" if final_risk_percentage >= 12.0 else "low"
 
     # ---- 3. 打包最終回傳格式 ----
     final_output = {
         "status": "success",
         "riskLevel": final_risk_level,
         "riskPercentage": round(final_risk_percentage, 1),
+        "scoreSource": score_source,
         "threat_assessment": {
             "auxiliary_signal_percentage": threat_result["risk_percentage"],
             "auxiliary_signal_level": threat_result["risk_level"],

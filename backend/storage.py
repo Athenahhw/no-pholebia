@@ -37,6 +37,15 @@ def init_db():
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS runtime_controls (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
     # 相容舊資料庫:如果是從舊版升級上來,沒有 review_status 欄位的話補上
     existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(scan_records)")}
     if "review_status" not in existing_cols:
@@ -47,6 +56,64 @@ def init_db():
         conn.execute("ALTER TABLE scan_records ADD COLUMN reviewed_note TEXT")
     conn.commit()
     conn.close()
+
+
+def arm_next_risk_override(risk_percentage: float, note: Optional[str] = None):
+    """
+    設定「下一筆」分析要強制使用的風險百分比。
+    一旦被 consume，就會自動刪除，不會持續生效。
+    """
+    normalized = max(0.0, min(float(risk_percentage), 30.0))
+    payload = {
+        "risk_percentage": normalized,
+        "note": note or "",
+        "armed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    conn = _get_connection()
+    conn.execute(
+        """
+        INSERT INTO runtime_controls (key, value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = excluded.updated_at
+        """,
+        (
+            "next_risk_override",
+            json.dumps(payload, ensure_ascii=False),
+            datetime.now(timezone.utc).isoformat(),
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return payload
+
+
+def consume_next_risk_override() -> Optional[dict]:
+    """
+    取出並刪除一次性 override；如果沒設定則回傳 None。
+    """
+    conn = _get_connection()
+    row = conn.execute(
+        "SELECT value FROM runtime_controls WHERE key = ?",
+        ("next_risk_override",),
+    ).fetchone()
+    if row is None:
+        conn.close()
+        return None
+
+    conn.execute("DELETE FROM runtime_controls WHERE key = ?", ("next_risk_override",))
+    conn.commit()
+    conn.close()
+
+    try:
+        parsed = json.loads(row["value"])
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    return None
 
 
 def save_record(payload, result: dict) -> int:

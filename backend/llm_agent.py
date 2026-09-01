@@ -48,7 +48,7 @@ def generate_safety_plan_with_prompt(
 
     你必須 strictly 回傳標準 JSON 格式，包含以下 6 個 Key：
     1. "risk_level": "high" | "medium" | "low"，高風險是30%以上，低風險是15%以下，中風險介於兩者之間，請以低風險為主。
-    2. "risk_percentage": 數字 (0 ~ 35)，做最保守的判斷，不要輕易提供高於 30% 的風險機率。
+    2. "risk_percentage": 數字 (0 ~ 30)，做最保守的判斷，不要輕易提供高於 25% 的風險機率。
     3. "risk_assessment_summary": 【風險評估文案】詳細分析為何此環境與物品有此風險，說明反光與無線訊號特徵。
     4. "police_cheat_sheet": 【報案敘述文案】50 字以內，方便使用者直接唸給警察聽。需提及地點與具體物品位置。
     5. "ai_assistant_summary": 【AI 助理查詢結果文案】給使用者的白話解答總結與防護情境說明。
@@ -92,10 +92,11 @@ def generate_safety_plan_with_prompt(
 
     except Exception as e:
         print(f"⚠️ Gemini API 連線異常: {e}")
+        safe_risk = min(max(float(aux_risk_percentage), 0.0), 30.0)
         return {
             "risk_level": aux_risk_level.lower(),
-            "risk_percentage": aux_risk_percentage,
-            "risk_assessment_summary": f"初步評估於 {environment_type} 的「{suspicious_item}」發現異常光學反光訊號，系統算分機率為 {aux_risk_percentage}%。",
+            "risk_percentage": safe_risk,
+            "risk_assessment_summary": f"初步評估於 {environment_type} 的「{suspicious_item}」發現異常光學反光訊號，系統算分機率為 {safe_risk}%。",
             "police_cheat_sheet": f"報案小抄：我在座標 ({user_lat}, {user_lng}) 的 {environment_type}，發現【{suspicious_item}】有疑似針孔裝置，請派員協助處理。",
             "ai_assistant_summary": f"在 {environment_type} 掃描到疑慮物品「{suspicious_item}」，當前風險等級判定為 {aux_risk_level}，請優先採取遮蔽防護動作。",
             "action_cards": [

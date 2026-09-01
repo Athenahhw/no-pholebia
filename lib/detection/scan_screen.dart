@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math; 
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:image/image.dart' as img;
-import 'package:sensors_plus/sensors_plus.dart'; 
+import 'package:sensors_plus/sensors_plus.dart';
 
 import 'camera_service.dart';
 import 'glint_detector.dart';
@@ -66,6 +66,43 @@ class _ScanScreenState extends State<ScanScreen> {
   // 用來保存背景任務的 Future，方便重置時不中斷它們
   Future<List<NetworkDevice>>? _networkFuture;
   Future<List<BluetoothDeviceInfo>>? _bluetoothFuture;
+
+  String? _encodeSuspiciousCropBase64(img.Image frameImage, BoundingBox box) {
+    try {
+      final int left =
+          ((box.x * frameImage.width) - (box.width * frameImage.width * 0.08))
+              .floor()
+              .clamp(0, frameImage.width - 1);
+      final int top =
+          ((box.y * frameImage.height) -
+                  (box.height * frameImage.height * 0.08))
+              .floor()
+              .clamp(0, frameImage.height - 1);
+      final int right =
+          ((box.x + box.width) * frameImage.width +
+                  (box.width * frameImage.width * 0.08))
+              .ceil()
+              .clamp(1, frameImage.width);
+      final int bottom =
+          ((box.y + box.height) * frameImage.height +
+                  (box.height * frameImage.height * 0.08))
+              .ceil()
+              .clamp(1, frameImage.height);
+
+      final int cropWidth = math.max(1, right - left);
+      final int cropHeight = math.max(1, bottom - top);
+      final img.Image cropped = img.copyCrop(
+        frameImage,
+        x: left,
+        y: top,
+        width: cropWidth,
+        height: cropHeight,
+      );
+      return base64Encode(img.encodeJpg(cropped, quality: 75));
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   void initState() {
@@ -186,7 +223,7 @@ class _ScanScreenState extends State<ScanScreen> {
 
   /// 處理每一幀畫面
   Future<void> _processFrame(CameraImage cameraImage) async {
-    if (_showShakeWarning) return; 
+    if (_showShakeWarning) return;
 
     // 修正：直接呼叫頂層函式 convertCameraImage
     final img.Image? frameImage = convertCameraImage(cameraImage);
@@ -218,8 +255,14 @@ class _ScanScreenState extends State<ScanScreen> {
 
           if (boxes.isNotEmpty) {
             _allBoundingBoxes = boxes;
+            final topBox = boxes.reduce(
+              (a, b) => a.confidence >= b.confidence ? a : b,
+            );
+            _finalScreenshotBase64 = _encodeSuspiciousCropBase64(
+              frameImage,
+              topBox,
+            );
           }
-          _finalScreenshotBase64 = base64Encode(jpegBytes);
         } finally {
           await tempFile.cleanup();
         }
@@ -427,51 +470,84 @@ class ScanOverlayPainter extends CustomPainter {
     );
     canvas.drawPath(overlayPath, outer);
 
-    final whiteStroke = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4;
-
+    const strokeWidth = 4.0;
     final cornerLength = 28.0;
-    final corners = [
-      [scanRect.topLeft, Offset(scanRect.left + cornerLength, scanRect.top)],
-      [scanRect.topLeft, Offset(scanRect.left, scanRect.top + cornerLength)],
-      [scanRect.topRight, Offset(scanRect.right - cornerLength, scanRect.top)],
-      [scanRect.topRight, Offset(scanRect.right, scanRect.top + cornerLength)],
-      [
-        scanRect.bottomLeft,
-        Offset(scanRect.left + cornerLength, scanRect.bottom),
-      ],
-      [
-        scanRect.bottomLeft,
-        Offset(scanRect.left, scanRect.bottom - cornerLength),
-      ],
-      [
-        scanRect.bottomRight,
-        Offset(scanRect.right - cornerLength, scanRect.bottom),
-      ],
-      [
-        scanRect.bottomRight,
-        Offset(scanRect.right, scanRect.bottom - cornerLength),
-      ],
-    ];
+    final whiteFill = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
 
-    for (final corner in corners) {
-      canvas.drawLine(corner[0], corner[1], whiteStroke);
-    }
+    // 左上
+    canvas.drawRect(
+      Rect.fromLTWH(scanRect.left, scanRect.top, cornerLength, strokeWidth),
+      whiteFill,
+    );
+    canvas.drawRect(
+      Rect.fromLTWH(scanRect.left, scanRect.top, strokeWidth, cornerLength),
+      whiteFill,
+    );
+    // 右上
+    canvas.drawRect(
+      Rect.fromLTWH(
+        scanRect.right - cornerLength,
+        scanRect.top,
+        cornerLength,
+        strokeWidth,
+      ),
+      whiteFill,
+    );
+    canvas.drawRect(
+      Rect.fromLTWH(
+        scanRect.right - strokeWidth,
+        scanRect.top,
+        strokeWidth,
+        cornerLength,
+      ),
+      whiteFill,
+    );
+    // 左下
+    canvas.drawRect(
+      Rect.fromLTWH(
+        scanRect.left,
+        scanRect.bottom - strokeWidth,
+        cornerLength,
+        strokeWidth,
+      ),
+      whiteFill,
+    );
+    canvas.drawRect(
+      Rect.fromLTWH(
+        scanRect.left,
+        scanRect.bottom - cornerLength,
+        strokeWidth,
+        cornerLength,
+      ),
+      whiteFill,
+    );
+    // 右下
+    canvas.drawRect(
+      Rect.fromLTWH(
+        scanRect.right - cornerLength,
+        scanRect.bottom - strokeWidth,
+        cornerLength,
+        strokeWidth,
+      ),
+      whiteFill,
+    );
+    canvas.drawRect(
+      Rect.fromLTWH(
+        scanRect.right - strokeWidth,
+        scanRect.bottom - cornerLength,
+        strokeWidth,
+        cornerLength,
+      ),
+      whiteFill,
+    );
 
     final beamY = scanRect.top + (scanRect.height * beamYRatio);
     final beamRect = Rect.fromLTWH(scanRect.left, beamY - 4, scanRect.width, 8);
 
-    final beamShadow = Paint()
-      ..color = Colors.yellow.withValues(alpha: 0.42)
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(beamRect, beamShadow);
-
     final beamPaint = Paint()
-      ..shader = const LinearGradient(
-        colors: [Color(0xFFFFF7A8), Color(0xFFFFD727), Color(0xFFFFB800)],
-      ).createShader(beamRect)
+      ..color = const Color(0xFFFFD727)
       ..style = PaintingStyle.fill;
     canvas.drawRect(beamRect, beamPaint);
 

@@ -115,20 +115,24 @@ class _ScanPageState extends State<ScanPage>
     return 1.0;
   }
 
-  (RiskLevel, double) _buildResultFrom(
+  (RiskLevel, double, bool) _buildResultFrom(
     DetectionSessionSummary summary,
     Map<String, dynamic>? backendResult,
   ) {
-    if (backendResult != null && backendResult['riskLevel'] != null) {
-      final riskLevelRaw = backendResult['riskLevel'].toString().toLowerCase();
+    final backendRiskLevel =
+        backendResult?['riskLevel'] ?? backendResult?['risk_level'];
+    final backendRiskPercentage =
+        backendResult?['riskPercentage'] ?? backendResult?['risk_percentage'];
+
+    if (backendRiskLevel != null && backendRiskPercentage != null) {
+      final riskLevelRaw = backendRiskLevel.toString().toLowerCase();
       final level = switch (riskLevelRaw) {
         'high' => RiskLevel.high,
         'medium' => RiskLevel.medium,
         _ => RiskLevel.low,
       };
-      final score =
-          (backendResult['riskPercentage'] as num?)?.toDouble() ?? 0.0;
-      return (level, score);
+      final score = (backendRiskPercentage as num?)?.toDouble() ?? 0.0;
+      return (level, score, true);
     }
 
     final wifiDetected = summary.networkDevices.any((d) => d.looksLikeCamera);
@@ -160,7 +164,7 @@ class _ScanPageState extends State<ScanPage>
         ? RiskLevel.medium
         : RiskLevel.low;
 
-    return (level, score);
+    return (level, score.clamp(0.0, 30.0), false);
   }
 
   void _startScan(BuildContext context) {
@@ -179,6 +183,7 @@ class _ScanPageState extends State<ScanPage>
                 builder: (context) => ResultPage(
                   riskLevel: result.$1,
                   score: result.$2,
+                  isBackendScore: result.$3,
                   scanSummary: summary,
                   backendResult: backendResult,
                 ),
