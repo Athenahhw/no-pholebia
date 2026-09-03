@@ -773,33 +773,6 @@ class _ResultPageState extends State<ResultPage> {
 
         const SizedBox(height: 20),
 
-        // PDF 下載區
-        RichText(
-          text: TextSpan(
-            children: [
-              TextSpan(
-                text: '已為您生成偵測報告，點按可下載PDF檔 ',
-                style: TextStyle(fontSize: 16, color: textColor, height: 1.4),
-              ),
-              WidgetSpan(
-                alignment: PlaceholderAlignment.middle,
-                child: Image.asset(
-                  'assets/images/Download.png',
-                  width: 18,
-                  height: 18,
-                  errorBuilder: (ctx, err, stack) => const Icon(
-                    Icons.download,
-                    size: 18,
-                    color: Color(0xFF395938),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 16),
-
         // 📍 警局與電話
         Text(
           '附近有 $policeName$policeDistance，您可以考慮報案。\n電話：',
@@ -832,22 +805,6 @@ class _ResultPageState extends State<ResultPage> {
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (_reportState == 1) ...[
-                    Image.asset(
-                      'assets/images/Loader.png',
-                      width: 18,
-                      height: 18,
-                      errorBuilder: (ctx, err, stack) => const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
                   Text(
                     _reportState == 2 ? '查看報案敘述' : '生成報案敘述',
                     style: const TextStyle(
