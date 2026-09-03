@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'dart:convert';
 import 'dart:ui';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -291,16 +289,6 @@ class _ResultPageState extends State<ResultPage> {
       }
     }
     return '偵測到非對稱的幾何小黑孔與微光特徵，該掛鉤外殼雖為常規塑料，但其中一顆十字螺絲的中心深度與光線吸收率，遠高於正常金屬螺絲，疑似為「螺絲型微型鏡頭」之偽裝。\n綜合評估危險指數：${_formatScore(_currentScore)}%\n\n請勿慌張或破壞犯罪現場，使用衛生紙或衣物遮蔽該處即可。';
-  }
-
-  Uint8List? _decodeBase64Image(String? encoded) {
-    if (encoded == null || encoded.trim().isEmpty) return null;
-    final raw = encoded.contains(',') ? encoded.split(',').last : encoded;
-    try {
-      return base64Decode(raw);
-    } catch (_) {
-      return null;
-    }
   }
 
   @override
@@ -783,27 +771,6 @@ class _ResultPageState extends State<ResultPage> {
         ),
         const SizedBox(height: 16),
 
-        // 證據圖
-        Container(
-          width: double.infinity,
-          height: 160,
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
-          clipBehavior: Clip.antiAlias,
-          child: Builder(
-            builder: (context) {
-              final bytes = _decodeBase64Image(
-                widget.scanSummary?.screenshotBase64,
-              );
-              if (bytes != null) {
-                return Image.memory(bytes, fit: BoxFit.cover);
-              }
-              return Image.asset(
-                'assets/images/evidence.png',
-                fit: BoxFit.cover,
-              );
-            },
-          ),
-        ),
         const SizedBox(height: 20),
 
         // PDF 下載區

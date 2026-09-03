@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
@@ -52,7 +51,6 @@ class _ScanScreenState extends State<ScanScreen> {
 
   // --- 收集到的資料 ---
   List<BoundingBox> _allBoundingBoxes = [];
-  String? _finalScreenshotBase64;
   double _ambientBrightnessAtStart = 0.0;
   bool _isFirstFrame = true;
   DateTime? _scanStartedAt;
@@ -66,43 +64,6 @@ class _ScanScreenState extends State<ScanScreen> {
   // 用來保存背景任務的 Future，方便重置時不中斷它們
   Future<List<NetworkDevice>>? _networkFuture;
   Future<List<BluetoothDeviceInfo>>? _bluetoothFuture;
-
-  String? _encodeSuspiciousCropBase64(img.Image frameImage, BoundingBox box) {
-    try {
-      final int left =
-          ((box.x * frameImage.width) - (box.width * frameImage.width * 0.08))
-              .floor()
-              .clamp(0, frameImage.width - 1);
-      final int top =
-          ((box.y * frameImage.height) -
-                  (box.height * frameImage.height * 0.08))
-              .floor()
-              .clamp(0, frameImage.height - 1);
-      final int right =
-          ((box.x + box.width) * frameImage.width +
-                  (box.width * frameImage.width * 0.08))
-              .ceil()
-              .clamp(1, frameImage.width);
-      final int bottom =
-          ((box.y + box.height) * frameImage.height +
-                  (box.height * frameImage.height * 0.08))
-              .ceil()
-              .clamp(1, frameImage.height);
-
-      final int cropWidth = math.max(1, right - left);
-      final int cropHeight = math.max(1, bottom - top);
-      final img.Image cropped = img.copyCrop(
-        frameImage,
-        x: left,
-        y: top,
-        width: cropWidth,
-        height: cropHeight,
-      );
-      return base64Encode(img.encodeJpg(cropped, quality: 75));
-    } catch (_) {
-      return null;
-    }
-  }
 
   @override
   void initState() {
@@ -255,13 +216,6 @@ class _ScanScreenState extends State<ScanScreen> {
 
           if (boxes.isNotEmpty) {
             _allBoundingBoxes = boxes;
-            final topBox = boxes.reduce(
-              (a, b) => a.confidence >= b.confidence ? a : b,
-            );
-            _finalScreenshotBase64 = _encodeSuspiciousCropBase64(
-              frameImage,
-              topBox,
-            );
           }
         } finally {
           await tempFile.cleanup();
@@ -300,11 +254,11 @@ class _ScanScreenState extends State<ScanScreen> {
       ambientBrightnessAtStart: _ambientBrightnessAtStart,
       torchUsedDuringScan: _cameraService.isTorchOn,
       remoteYoloAvailable: true,
-      screenshotBase64: _finalScreenshotBase64,
       networkDevices: networkDevices,
       bluetoothDevices: bluetoothDevices,
       latitude: userLocation?.latitude,
       longitude: userLocation?.longitude,
+      screenshotBase64: null,
       scanStartedAt: _scanStartedAt ?? DateTime.now(),
       scanEndedAt: DateTime.now(),
     );
