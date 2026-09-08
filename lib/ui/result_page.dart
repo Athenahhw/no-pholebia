@@ -75,11 +75,11 @@ class _ResultPageState extends State<ResultPage> {
   String _demoSummaryForRisk() {
     switch (_currentRisk) {
       case RiskLevel.high:
-        return '【後門演示模式】已判定為高風險區域，請優先遮蔽可疑位置並保持現場完整。\n綜合評估危險指數：${_formatScore(_currentScore)}%\n\n請勿慌張或破壞犯罪現場，先完成必要遮蔽後再進一步確認。';
+        return '偵測到非對稱的幾何小黑孔與微光特徵，該掛鉤外殼雖為常規塑料，但其中一顆十字螺絲的中心深度與光線吸收率，遠高於正常金屬螺絲，疑似為「螺絲型微型鏡頭」之偽裝。\n綜合評估危險指數：${_formatScore(_currentScore)}%\n\n請勿慌張或破壞犯罪現場，使用衛生紙或衣物遮蔽該處即可。';
       case RiskLevel.medium:
-        return '【後門演示模式】已判定為中風險區域，建議優先檢查可疑物件與訊號來源。\n綜合評估危險指數：${_formatScore(_currentScore)}%\n\n請先確認環境內的插座、掛勾、芳香劑與煙霧偵測器。';
+        return '偵測到可疑的幾何反光與周邊訊號干擾，該區域存在中度風險，需要進一步檢查。\n綜合評估危險指數：${_formatScore(_currentScore)}%\n\n請先確認環境內的插座、掛勾、芳香劑與煙霧偵測器。';
       case RiskLevel.low:
-        return '【後門演示模式】目前判定為低風險區域，整體環境相對正常。\n綜合評估危險指數：${_formatScore(_currentScore)}%\n\n仍建議在進入陌生環境前做基本巡查，保持隱私安全。';
+        return '目前未見明顯異常光點與可疑訊號，整體環境相對正常。\n綜合評估危險指數：${_formatScore(_currentScore)}%\n\n仍建議在進入陌生環境前做基本巡查，保持隱私安全。';
     }
   }
 
@@ -114,7 +114,6 @@ class _ResultPageState extends State<ResultPage> {
           {'text': '優先檢查插座、掛勾、煙霧偵測器與延長線。', 'showDot': true},
           {'text': '保持現場完整，避免直接破壞可疑物。', 'showDot': true},
           {'text': '若需要，直接按下生成報案敘述。', 'showDot': false},
-          {'text': '後門模式下可直接展示固定內容。', 'showDot': false},
         ];
       case RiskLevel.medium:
         return [
@@ -122,7 +121,6 @@ class _ResultPageState extends State<ResultPage> {
           {'text': '優先檢查可疑插座、掛勾與遮蔽物。', 'showDot': true},
           {'text': '若有異常，先完成遮蔽再離開現場。', 'showDot': true},
           {'text': '必要時聯絡管理單位或警局。', 'showDot': false},
-          {'text': '後門模式下可直接展示固定內容。', 'showDot': false},
         ];
       case RiskLevel.low:
         return [
@@ -130,7 +128,6 @@ class _ResultPageState extends State<ResultPage> {
           {'text': '進入陌生空間前可快速巡視插座與掛勾。', 'showDot': true},
           {'text': '若再發現異常，可重新啟動掃描。', 'showDot': true},
           {'text': '維持基本隱私保護即可。', 'showDot': false},
-          {'text': '後門模式下可直接展示固定內容。', 'showDot': false},
         ];
     }
   }
@@ -920,8 +917,9 @@ class _ResultPageState extends State<ResultPage> {
   // 高風險詳細內容
   Widget _buildHighRiskContent(Color textColor) {
     if (_isAdminDemoMode) {
-      final String policeName = '臺北市政府警察局大安分局敦化南路派出所';
-      final String policePhone = '02-2772-0400';
+      final PoliceStation? policeStation = _nearestPolice;
+      final String policeName = policeStation?.name ?? '附近警察單位';
+      final String policePhone = policeStation?.phone ?? '110';
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -931,7 +929,7 @@ class _ResultPageState extends State<ResultPage> {
           ),
           const SizedBox(height: 20),
           Text(
-            '已生成固定示範內容，後門模式下可直接用於演示。',
+            '已根據目前偵測結果生成對應內容。',
             style: TextStyle(fontSize: 16, color: textColor, height: 1.35),
           ),
           const SizedBox(height: 16),
@@ -992,8 +990,8 @@ class _ResultPageState extends State<ResultPage> {
       );
     }
 
-    final String policeName = _nearestPolice?.name ?? '臺北市政府警察局大安分局敦化南路派出所';
-    final String policePhone = _nearestPolice?.phone ?? '02-2772-0400';
+    final String policeName = _nearestPolice?.name ?? '附近警察單位';
+    final String policePhone = _nearestPolice?.phone ?? '110';
     final String policeDistance =
         _nearestPolice?.formattedDistance.isNotEmpty == true
         ? ' (距離 ${_nearestPolice!.formattedDistance})'
