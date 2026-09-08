@@ -8,13 +8,22 @@ from google import genai
 from google.genai import types
 
 # 1. 讀取 .env 中的 GEMINI_API_KEY
-load_dotenv()
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-if not GEMINI_API_KEY:
-    raise ValueError("⚠️ 找不到 GEMINI_API_KEY！請檢查 backend/.env 檔案。")
-
-client = genai.Client(api_key=GEMINI_API_KEY)
+# Keep the API request shorter than the Flutter client's timeout so the backend
+# can return its local fallback response when Gemini is unreachable.
+client = (
+    genai.Client(
+        api_key=GEMINI_API_KEY,
+        http_options=types.HttpOptions(
+            timeout=15000,
+            retry_options=types.HttpRetryOptions(attempts=1),
+        ),
+    )
+    if GEMINI_API_KEY
+    else None
+)
 
 
 def generate_safety_plan_with_prompt(
@@ -79,6 +88,8 @@ def generate_safety_plan_with_prompt(
     contents.append(prompt_content)
 
     try:
+        if client is None:
+            raise RuntimeError("GEMINI_API_KEY 未設定，使用本地保底建議")
         response = client.models.generate_content(
             model="gemini-flash-latest",
             contents=contents,
@@ -142,6 +153,8 @@ def generate_travel_assistant_advice(
     """
 
     try:
+        if client is None:
+            raise RuntimeError("GEMINI_API_KEY 未設定，使用本地保底建議")
         response = client.models.generate_content(
             model="gemini-flash-latest",
             contents=[prompt],

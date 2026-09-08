@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -88,7 +90,7 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
               'destination': destination,
             }),
           )
-          .timeout(const Duration(seconds: 20));
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode != 200) {
         throw Exception('HTTP ${response.statusCode}: ${response.body}');
@@ -123,6 +125,16 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
         _locationSummary =
             data['location_summary']?.toString() ?? '暫時沒有取得 AI 建議。';
         _cautionItems = parsedCautionItems;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = '查詢逾時，請確認後端已啟動且手機與電腦連線至同一個 Wi-Fi。';
+      });
+    } on SocketException {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = '無法連線到後端，請先啟動 FastAPI，並確認手機與電腦連線至同一個 Wi-Fi。';
       });
     } catch (e) {
       if (!mounted) return;
