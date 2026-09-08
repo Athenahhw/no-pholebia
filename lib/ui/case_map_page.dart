@@ -79,13 +79,27 @@ class _CaseMapPageState extends State<CaseMapPage> {
     }
   }
 
-  /// 根據風險等級返回對應顏色
+  /// 根據風險等級返回對應顏色（用於地圖圓形圖標）
   Color _getRiskColor(String riskLevel) {
     switch (riskLevel) {
       case 'HIGH':
         return Color(0xFFFF45D7); // 高風險 - 粉紅色
       case 'MEDIUM':
-        return Color(0xFFFFFF45); // 中風險 - 黃色
+        return Color(0xFFFFFF45); // 中風險 - 黃色（地圖圖標）
+      case 'LOW':
+        return Color(0xFF4583FF); // 低風險 - 藍色
+      default:
+        return Colors.grey;
+    }
+  }
+
+  /// 根據風險等級返回標題顏色（用於卡片標題、叉叉、線）
+  Color _getRiskTitleColor(String riskLevel) {
+    switch (riskLevel) {
+      case 'HIGH':
+        return Color(0xFFFF45D7); // 高風險 - 粉紅色
+      case 'MEDIUM':
+        return Color(0xFF395938); // 中風險 - 深綠色 #395938（卡片標題等）
       case 'LOW':
         return Color(0xFF4583FF); // 低風險 - 藍色
       default:
@@ -138,6 +152,7 @@ class _CaseMapPageState extends State<CaseMapPage> {
             }
 
             final Color riskColor = _getRiskColor(riskLevel);
+            final Color titleColor = _getRiskTitleColor(riskLevel);
 
             loadedMarkers.add(
               Marker(
@@ -152,7 +167,7 @@ class _CaseMapPageState extends State<CaseMapPage> {
                         position: LatLng(lat, lng),
                         riskColor: riskColor,
                         title: _getRiskLevelChinese(riskLevel),
-                        titleColor: riskColor,
+                        titleColor: titleColor,
                         content: '地點：$location\n事件：$title\n發生時間：$endDate',
                       );
                       _showBottomCard = true;
@@ -213,6 +228,7 @@ class _CaseMapPageState extends State<CaseMapPage> {
         final String riskLevel = TimeRiskService.getRiskLevelString(riskWeight);
 
         final Color riskColor = _getRiskColor(riskLevel);
+        final Color titleColor = _getRiskTitleColor(riskLevel);
 
         loadedMarkers.add(
           Marker(
@@ -227,7 +243,7 @@ class _CaseMapPageState extends State<CaseMapPage> {
                     position: LatLng(lat, lng),
                     riskColor: riskColor,
                     title: _getRiskLevelChinese(riskLevel),
-                    titleColor: riskColor,
+                    titleColor: titleColor,
                     content: '地點：$location\n事件：$title\n發生時間：$endDate',
                   );
                   _showBottomCard = true;
