@@ -240,103 +240,91 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
   String _placeHint = '';
 
   Widget _buildInputView() {
-  return SingleChildScrollView(
-    padding: const EdgeInsets.symmetric(horizontal: 32.0),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 60),
-        _buildOutlinedInputField(
-          label: 'Date',
-          controller: _dateController,
-          hintText: _dateHint,
-          suffixIcon: Icons.calendar_month_outlined,
-          onTap: () {
-            // 點擊選擇時若曾顯示過提示，恢復預設
-            if (_dateHint != 'MM/DD/YYYY') {
-              setState(() => _dateHint = 'MM/DD/YYYY');
-            }
-            _selectDate();
-          },
-          readOnly: true,
-        ),
-        const SizedBox(height: 24),
-        _buildOutlinedInputField(
-          label: 'Place',
-          controller: _placeController,
-          focusNode: _placeFocusNode,
-          hintText: _placeHint,
-          suffixIcon: Icons.location_on_outlined,
-        ),
-        if (_showHistory)
-          Container(
-            width: double.infinity,
-            margin: const EdgeInsets.only(top: 2),
-            decoration: BoxDecoration(
-              color: cardWhite,
-              border: Border.all(color: baseGreen, width: 1.5),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: _historyList
-                  .map((placeText) => _buildHistoryRow(placeText))
-                  .toList(),
-            ),
-          ),
-        const SizedBox(height: 20),
-        Text(
-          '輸入您的差旅行程，系統即刻為您提供安全建議！',
-          style: TextStyle(
-            fontSize: 14,
-            color: baseGreen,
-            fontWeight: FontWeight.w400,
-          ),
-        ),
-        const SizedBox(height: 36),
-        Center(
-          child: _buildSearchButton(
-            onTap: () async {
-              final isDateEmpty = _dateController.text.trim().isEmpty;
-              final isPlaceEmpty = _placeController.text.trim().isEmpty;
-
-              // 未輸入時，同步將提示文字寫入框內
-              if (isDateEmpty || isPlaceEmpty) {
-                setState(() {
-                  if (isDateEmpty) _dateHint = '請選擇日期';
-                  if (isPlaceEmpty) _placeHint = '請輸入地點';
-                });
-                return;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 32.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 60),
+          _buildOutlinedInputField(
+            label: 'Date',
+            controller: _dateController,
+            hintText: _dateHint,
+            suffixIcon: Icons.calendar_month_outlined,
+            onTap: () {
+              // 點擊選擇時若曾顯示過提示，恢復預設
+              if (_dateHint != 'MM/DD/YYYY') {
+                setState(() => _dateHint = 'MM/DD/YYYY');
               }
-
-              // 驗證通過後重設 Hint 並送出
-              setState(() {
-                _dateHint = 'MM/DD/YYYY';
-                _placeHint = '';
-              });
-
-              _saveHistory(_placeController.text.trim());
-              FocusScope.of(context).unfocus();
-              await _queryAssistant();
+              _selectDate();
             },
+            readOnly: true,
           ),
-        ),
-      ],
-    ),
-  );
-}
+          const SizedBox(height: 24),
+          _buildOutlinedInputField(
+            label: 'Place',
+            controller: _placeController,
+            focusNode: _placeFocusNode,
+            hintText: _placeHint,
+            suffixIcon: Icons.location_on_outlined,
+          ),
+          if (_showHistory)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(top: 2),
+              decoration: BoxDecoration(
+                color: cardWhite,
+                border: Border.all(color: baseGreen, width: 1.5),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: _historyList
+                    .map((placeText) => _buildHistoryRow(placeText))
+                    .toList(),
+              ),
+            ),
+          const SizedBox(height: 20),
+          Text(
+            '輸入您的差旅行程，系統即刻為您提供安全建議！',
+            style: TextStyle(
+              fontSize: 14,
+              color: baseGreen,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+          const SizedBox(height: 36),
+          Center(
+            child: _buildSearchButton(
+              onTap: () async {
+                final isDateEmpty = _dateController.text.trim().isEmpty;
+                final isPlaceEmpty = _placeController.text.trim().isEmpty;
 
-void _showValidationError(String message) {
-  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(message),
-      duration: const Duration(seconds: 2),
-      behavior: SnackBarBehavior.floating,
-      backgroundColor: Colors.redAccent,
-    ),
-  );
-}
+                // 未輸入時，同步將提示文字寫入框內
+                if (isDateEmpty || isPlaceEmpty) {
+                  setState(() {
+                    if (isDateEmpty) _dateHint = '請選擇日期';
+                    if (isPlaceEmpty) _placeHint = '請輸入地點';
+                  });
+                  return;
+                }
+
+                // 驗證通過後重設 Hint 並送出
+                setState(() {
+                  _dateHint = 'MM/DD/YYYY';
+                  _placeHint = '';
+                });
+
+                _saveHistory(_placeController.text.trim());
+                FocusScope.of(context).unfocus();
+                await _queryAssistant();
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   // --- 模式 B: 查詢結果介面 ---
   Widget _buildResultView() {
@@ -613,7 +601,7 @@ void _showValidationError(String message) {
           fontWeight: FontWeight.w300, // 細字體
           color: (hintText.contains('請'))
               ? Colors.redAccent.withOpacity(0.7) // 提示時呈現柔和淡紅細字
-              : Colors.grey.shade400,            // 平常呈現淡灰色
+              : Colors.grey.shade400, // 平常呈現淡灰色
         ),
         floatingLabelBehavior: FloatingLabelBehavior.always,
         filled: true,

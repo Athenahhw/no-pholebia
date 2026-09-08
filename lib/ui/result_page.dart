@@ -15,6 +15,7 @@ class ResultPage extends StatefulWidget {
   final RiskLevel riskLevel;
   final double score;
   final bool isBackendScore;
+  final String? scoreSource;
   final DetectionSessionSummary? scanSummary;
   final Map<String, dynamic>? backendResult;
 
@@ -23,6 +24,7 @@ class ResultPage extends StatefulWidget {
     this.riskLevel = RiskLevel.low,
     required this.score,
     this.isBackendScore = false,
+    this.scoreSource,
     this.scanSummary,
     this.backendResult,
   });
@@ -66,6 +68,71 @@ class _ResultPageState extends State<ResultPage> {
   void dispose() {
     _pageController.dispose();
     super.dispose();
+  }
+
+  bool get _isAdminDemoMode => widget.scoreSource == 'backend_admin_override';
+
+  String _demoSummaryForRisk() {
+    switch (_currentRisk) {
+      case RiskLevel.high:
+        return '【後門演示模式】已判定為高風險區域，請優先遮蔽可疑位置並保持現場完整。\n綜合評估危險指數：${_formatScore(_currentScore)}%\n\n請勿慌張或破壞犯罪現場，先完成必要遮蔽後再進一步確認。';
+      case RiskLevel.medium:
+        return '【後門演示模式】已判定為中風險區域，建議優先檢查可疑物件與訊號來源。\n綜合評估危險指數：${_formatScore(_currentScore)}%\n\n請先確認環境內的插座、掛勾、芳香劑與煙霧偵測器。';
+      case RiskLevel.low:
+        return '【後門演示模式】目前判定為低風險區域，整體環境相對正常。\n綜合評估危險指數：${_formatScore(_currentScore)}%\n\n仍建議在進入陌生環境前做基本巡查，保持隱私安全。';
+    }
+  }
+
+  List<Map<String, String>> _demoCardsForRisk() {
+    switch (_currentRisk) {
+      case RiskLevel.high:
+        return [
+          {'title': '可疑反光點', 'status': '偵測到高風險反光特徵'},
+          {'title': 'Wi-Fi 連線', 'status': '偵測到可疑無線訊號'},
+          {'title': '藍芽訊號', 'status': '偵測到可疑藍芽裝置'},
+        ];
+      case RiskLevel.medium:
+        return [
+          {'title': '可疑反光點', 'status': '出現中度異常反光'},
+          {'title': 'Wi-Fi 連線', 'status': '附近有可疑 Wi-Fi 活動'},
+          {'title': '藍芽訊號', 'status': '附近有可疑藍芽裝置'},
+        ];
+      case RiskLevel.low:
+        return [
+          {'title': '可疑反光點', 'status': '未偵測到可疑反光點'},
+          {'title': 'Wi-Fi 連線', 'status': '未偵測到可疑 Wi-Fi'},
+          {'title': '藍芽訊號', 'status': '未偵測到可疑藍芽'},
+        ];
+    }
+  }
+
+  List<Map<String, dynamic>> _riskChecklistEntries() {
+    switch (_currentRisk) {
+      case RiskLevel.high:
+        return [
+          {'text': '偵測到高風險異常訊號，請立即遮蔽可疑位置。', 'showDot': true},
+          {'text': '優先檢查插座、掛勾、煙霧偵測器與延長線。', 'showDot': true},
+          {'text': '保持現場完整，避免直接破壞可疑物。', 'showDot': true},
+          {'text': '若需要，直接按下生成報案敘述。', 'showDot': false},
+          {'text': '後門模式下可直接展示固定內容。', 'showDot': false},
+        ];
+      case RiskLevel.medium:
+        return [
+          {'text': '偵測到中風險異常訊號，請先觀察周遭環境。', 'showDot': true},
+          {'text': '優先檢查可疑插座、掛勾與遮蔽物。', 'showDot': true},
+          {'text': '若有異常，先完成遮蔽再離開現場。', 'showDot': true},
+          {'text': '必要時聯絡管理單位或警局。', 'showDot': false},
+          {'text': '後門模式下可直接展示固定內容。', 'showDot': false},
+        ];
+      case RiskLevel.low:
+        return [
+          {'text': '目前風險偏低，但仍建議留意周遭環境。', 'showDot': true},
+          {'text': '進入陌生空間前可快速巡視插座與掛勾。', 'showDot': true},
+          {'text': '若再發現異常，可重新啟動掃描。', 'showDot': true},
+          {'text': '維持基本隱私保護即可。', 'showDot': false},
+          {'text': '後門模式下可直接展示固定內容。', 'showDot': false},
+        ];
+    }
   }
 
   void _updateLineY() {
@@ -281,6 +348,10 @@ class _ResultPageState extends State<ResultPage> {
   }
 
   String _riskSummaryText() {
+    if (_isAdminDemoMode) {
+      return _demoSummaryForRisk();
+    }
+
     final aiSection = widget.backendResult?['ai_reasoning_and_actions'];
     if (aiSection is Map) {
       final summary = aiSection['risk_assessment_summary']?.toString();
@@ -620,6 +691,99 @@ class _ResultPageState extends State<ResultPage> {
     Color themeColor,
     Color textColor,
   ) {
+    if (_isAdminDemoMode) {
+      final cardsData = _demoCardsForRisk();
+      return Column(
+        children: [
+          Container(
+            width: width,
+            height: 80,
+            decoration: BoxDecoration(
+              color: themeColor.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: cardsData.length,
+              onPageChanged: (index) {
+                setState(() {
+                  _currentCardIndex = index;
+                });
+              },
+              itemBuilder: (context, index) {
+                final card = cardsData[index];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16.0,
+                    vertical: 12.0,
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: Icon(
+                          index == 0
+                              ? Icons.light_mode_outlined
+                              : index == 1
+                              ? Icons.wifi
+                              : Icons.bluetooth,
+                          size: 32,
+                          color: themeColor,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              card['title'] as String,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: themeColor,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              card['status'] as String,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w500,
+                                color: textColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(3, (index) {
+              final bool isSelected = _currentCardIndex == index;
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: themeColor.withOpacity(isSelected ? 1.0 : 0.5),
+                ),
+              );
+            }),
+          ),
+        ],
+      );
+    }
+
     final summary = widget.scanSummary;
     final bool hasGlint =
         (summary != null &&
@@ -755,6 +919,79 @@ class _ResultPageState extends State<ResultPage> {
 
   // 高風險詳細內容
   Widget _buildHighRiskContent(Color textColor) {
+    if (_isAdminDemoMode) {
+      final String policeName = '臺北市政府警察局大安分局敦化南路派出所';
+      final String policePhone = '02-2772-0400';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _demoSummaryForRisk(),
+            style: TextStyle(fontSize: 16, color: textColor, height: 1.45),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            '已生成固定示範內容，後門模式下可直接用於演示。',
+            style: TextStyle(fontSize: 16, color: textColor, height: 1.35),
+          ),
+          const SizedBox(height: 16),
+          ..._riskChecklistEntries().map(
+            (entry) => _buildListItem(
+              entry['text'] as String,
+              entry['showDot'] as bool,
+              textColor,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            '附近有 $policeName，您可以考慮報案。\n電話：',
+            style: TextStyle(fontSize: 16, color: textColor),
+          ),
+          GestureDetector(
+            onTap: () => _makePhoneCall(policePhone),
+            child: Text(
+              policePhone,
+              style: const TextStyle(
+                fontSize: 16,
+                color: Colors.blue,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Center(
+            child: GestureDetector(
+              onTap: _handleReportAction,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF395938),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      '生成報案敘述',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     final String policeName = _nearestPolice?.name ?? '臺北市政府警察局大安分局敦化南路派出所';
     final String policePhone = _nearestPolice?.phone ?? '02-2772-0400';
     final String policeDistance =

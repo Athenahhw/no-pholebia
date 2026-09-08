@@ -184,6 +184,7 @@ class _ScanPageState extends State<ScanPage>
                   riskLevel: result.$1,
                   score: result.$2,
                   isBackendScore: result.$3,
+                  scoreSource: backendResult?['scoreSource']?.toString(),
                   scanSummary: summary,
                   backendResult: backendResult,
                 ),
