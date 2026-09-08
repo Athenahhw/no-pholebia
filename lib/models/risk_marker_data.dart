@@ -32,29 +32,4 @@ class RiskMarkerData {
 }
 
 // 預設的風險點資料清單
-List<RiskMarkerData> defaultRiskMarkers = [
-  // 1. 高風險
-  RiskMarkerData(
-    position: const LatLng(25.0263, 121.5435),
-    riskColor: RiskLevel.high,
-    titleColor: RiskLevel.high,
-    title: '高風險',
-    content: RiskLevel.highContent,
-  ),
-  // 2. 中風險 (黃色光圈 + 黃色標題/叉叉)
-  RiskMarkerData(
-    position: const LatLng(25.0210, 121.5350),
-    riskColor: RiskLevel.medium,
-    titleColor: RiskLevel.mediumTitleColor,
-    title: '中風險',
-    content: RiskLevel.mediumContent,
-  ),
-  // 3. 低風險
-  RiskMarkerData(
-    position: const LatLng(25.0335, 121.5430),
-    riskColor: RiskLevel.low,
-    titleColor: RiskLevel.low,
-    title: '低風險',
-    content: RiskLevel.lowContent,
-  ),
-];
+List<RiskMarkerData> defaultRiskMarkers = [];
