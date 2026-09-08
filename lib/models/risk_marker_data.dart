@@ -8,7 +8,7 @@ class RiskLevel {
   static const Color low = Color(0xFF4583FF);         // 低風險 #4583FF
 
   // 標題顏色定義
-  static const Color mediumTitleColor = Color(0xFFFFFF45); // 中風險文字用黃色
+  static const Color mediumTitleColor = Color(0xFF395938); // 中風險文字用深綠色 #395938
 
   static const String highContent = '高風險區域 - 請加倍小心並採取防護措施';
   static const String mediumContent = '中風險區域 - 建議提高警覺';
