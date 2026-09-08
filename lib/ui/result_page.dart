@@ -490,29 +490,15 @@ class _ResultPageState extends State<ResultPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               _buildListItem(
-                                isLow ? '未偵測到紅外線與反光點,' : '偵測到可疑藍芽與 Wi-Fi 訊號較強,',
-                                true,
-                                textContentColor,
-                              ),
-                              _buildListItem(
-                                isLow ? '未偵測到藍芽與 Wi-Fi,' : '建議檢查周遭可疑插座或延長線,',
-                                true,
-                                textContentColor,
-                              ),
-                              _buildListItem(
-                                isLow ? '未偵測到異常磁場,' : '未發現紅外線異常點,',
-                                true,
-                                textContentColor,
-                              ),
-                              _buildListItem(
-                                '綜合評估危險指數：${_currentScore.toStringAsFixed(2)}%',
+                                '綜合評估危險指數：${_formatScore(_currentScore)}%',
                                 false,
                                 textContentColor,
                               ),
+                              const SizedBox(height: 4),
                               _buildListItem(
                                 isLow
-                                    ? '您所在環境無隱藏針孔攝影機, 請安心使用。'
-                                    : '環境存在潛在風險，請謹慎使用。',
+                                  ? '您所在環境無隱藏針孔攝影機，請安心使用。'
+                                  : '環境存在潛在風險，請謹慎使用。',
                                 false,
                                 textContentColor,
                               ),
@@ -782,18 +768,32 @@ class _ResultPageState extends State<ResultPage> {
     }
 
     final summary = widget.scanSummary;
-    final bool hasGlint =
-        (summary != null &&
-            (summary.highRiskGlintCount > 0 || summary.glints.isNotEmpty)) ||
-        (_currentRisk == RiskLevel.medium);
-    final bool hasSuspiciousWifi =
-        (summary != null &&
-            summary.networkDevices.any((d) => d.looksLikeCamera)) ||
-        (_currentRisk == RiskLevel.medium);
-    final bool hasSuspiciousBle =
-        (summary != null &&
-            summary.bluetoothDevices.any((d) => d.suspicious)) ||
-        (_currentRisk == RiskLevel.medium);
+bool hasGlint = false;
+bool hasSuspiciousWifi = false;
+bool hasSuspiciousBle = false;
+
+if (_isAdminDemoMode) {
+  hasGlint = _currentRisk != RiskLevel.low;
+  hasSuspiciousWifi = _currentRisk != RiskLevel.low;
+  hasSuspiciousBle = _currentRisk != RiskLevel.low;
+} else {
+  final summary = widget.scanSummary;
+  final backend = widget.backendResult;
+
+  // 1. 從本地掃描數據判斷
+  if (summary != null) {
+    hasGlint = summary.highRiskGlintCount > 0 || summary.glints.isNotEmpty;
+    hasSuspiciousWifi = summary.networkDevices.any((d) => d.looksLikeCamera);
+    hasSuspiciousBle = summary.bluetoothDevices.any((d) => d.suspicious);
+  }
+  
+  // 2. 若後端有覆蓋參數則優先採用
+  if (backend != null) {
+    if (backend.containsKey('has_glint')) hasGlint = backend['has_glint'] == true;
+    if (backend.containsKey('has_wifi_risk')) hasSuspiciousWifi = backend['has_wifi_risk'] == true;
+    if (backend.containsKey('has_ble_risk')) hasSuspiciousBle = backend['has_ble_risk'] == true;
+  }
+}
 
     final List<Map<String, dynamic>> cardsData = [
       {
