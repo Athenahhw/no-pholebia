@@ -71,7 +71,7 @@ class _ResultPageState extends State<ResultPage> {
   }
 
   bool get _isAdminDemoMode => widget.scoreSource == 'backend_admin_override';
-
+//後門演示模式，不要刪
   String _demoSummaryForRisk() {
     switch (_currentRisk) {
       case RiskLevel.high:
