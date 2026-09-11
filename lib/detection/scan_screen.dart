@@ -15,6 +15,7 @@ import 'detection_backend_client.dart';
 import 'detection_result.dart';
 import '../services/location_service.dart';
 import 'image_converter.dart'; // 匯入轉換工具
+import 'scan_countdown.dart';
 
 class ScanScreen extends StatefulWidget {
   final String? environmentContext;
@@ -50,6 +51,7 @@ class _ScanScreenState extends State<ScanScreen> {
   bool _isProcessing = false;
   bool _objectDetectCallInFlight = false;
   bool _glintCaptureInFlight = false;
+  bool _autoFinishTriggered = false;
 
   // --- 收集到的資料 ---
   List<BoundingBox> _allBoundingBoxes = [];
@@ -104,7 +106,7 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
-  /// 顯示已掃描秒數；結束由使用者按下錄影結束鈕決定。
+  /// 顯示倒數 6 秒，倒數結束時自動結束，且結束按鈕仍保留可點擊。
   void _startElapsedTimer() {
     _scanTimer?.cancel();
     _scanTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -112,8 +114,13 @@ class _ScanScreenState extends State<ScanScreen> {
         timer.cancel();
         return;
       }
+
       setState(() {
         _elapsedSeconds++;
+        if (ScanCountdown.shouldFinish(_elapsedSeconds) && !_autoFinishTriggered) {
+          _autoFinishTriggered = true;
+          unawaited(_finishScanByUser());
+        }
       });
     });
   }
@@ -192,9 +199,11 @@ class _ScanScreenState extends State<ScanScreen> {
 
     // --- A. 高頻任務：反光點追蹤 ---
     final candidates = _glintDetector.detect(frameImage);
-    _glintTracker.addFrame(candidates);
     if (candidates.isNotEmpty) {
-      unawaited(_captureGlintCrops(frameImage, candidates));
+      _glintTracker.addFrame(candidates);
+      unawaited(
+        _captureGlintCrops(frameImage, candidates, forceHighRisk: true),
+      );
     }
 
     // --- B. 低頻任務：物件偵測與截圖 ---
@@ -295,11 +304,11 @@ class _ScanScreenState extends State<ScanScreen> {
     try {
       for (final candidate in candidates) {
         if (_glintScreenshotsBase64.length >= 4) break;
-        if (forceHighRisk &&
-            (candidate.flickerScore ?? 0) <= 5.0 &&
-            _glintScreenshotsBase64.isNotEmpty) {
-          continue;
-        }
+
+        final shouldInclude = forceHighRisk
+            ? (candidate.flickerScore ?? 0) > 0 || _glintScreenshotsBase64.isEmpty
+            : true;
+        if (!shouldInclude) continue;
 
         final key = '${candidate.x ~/ 24}_${candidate.y ~/ 24}';
         if (_capturedGlintKeys.contains(key)) continue;
@@ -465,7 +474,7 @@ class _ScanScreenState extends State<ScanScreen> {
               children: [
                 if (!_isProcessing) ...[
                   Text(
-                    _elapsedSeconds.toString().padLeft(2, '0'),
+                    '倒數 ${ScanCountdown.remainingSeconds(_elapsedSeconds).toString().padLeft(2, '0')} 秒',
                     style: const TextStyle(
                       fontSize: 28,
                       color: Colors.white,

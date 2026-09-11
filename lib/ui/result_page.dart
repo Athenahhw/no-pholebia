@@ -828,10 +828,17 @@ class _ResultPageState extends State<ResultPage> {
 
   Widget _buildGlintEvidenceGallery(Color textColor) {
     final liveBytes = <Uint8List>[];
-    for (final encoded in widget.scanSummary?.glintScreenshotsBase64 ?? const <String>[]) {
-      try {
-        liveBytes.add(base64Decode(encoded.split(',').last));
-      } catch (_) {}
+    final summary = widget.scanSummary;
+    if (summary != null) {
+      for (final encoded in summary.glintScreenshotsBase64) {
+        try {
+          final normalized = encoded.contains(',') ? encoded.split(',').last : encoded;
+          final bytes = base64Decode(normalized);
+          if (bytes.isNotEmpty) {
+            liveBytes.add(bytes);
+          }
+        } catch (_) {}
+      }
     }
 
     return Column(
