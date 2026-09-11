@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
@@ -45,15 +46,19 @@ class _ScanScreenState extends State<ScanScreen> {
   final DetectionBackendClient _backendClient = DetectionBackendClient();
 
   // --- 狀態變數 ---
-  int _timeLeft = 6;
+  int _elapsedSeconds = 0;
   bool _isProcessing = false;
   bool _objectDetectCallInFlight = false;
+  bool _glintCaptureInFlight = false;
 
   // --- 收集到的資料 ---
   List<BoundingBox> _allBoundingBoxes = [];
   double _ambientBrightnessAtStart = 0.0;
   bool _isFirstFrame = true;
   DateTime? _scanStartedAt;
+  img.Image? _lastFrame;
+  final List<String> _glintScreenshotsBase64 = [];
+  final Set<String> _capturedGlintKeys = {};
 
   Timer? _scanTimer;
   Timer? _scanBeamTimer;
@@ -86,7 +91,7 @@ class _ScanScreenState extends State<ScanScreen> {
       await _cameraService.startImageStream(_processFrame);
 
       _startMotionDetection();
-      _startTimer();
+      _startElapsedTimer();
       _startScanBeamAnimation();
     } catch (e) {
       debugPrint("相機初始化失敗: $e");
@@ -99,32 +104,28 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
-  /// 📍 啟動倒數計時器 (獨立出來以便重啟)
-  void _startTimer() {
-    _scanTimer?.cancel(); // 確保不會有重複的 Timer
-
-    _scanTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
-      if (!mounted) {
+  /// 顯示已掃描秒數；結束由使用者按下錄影結束鈕決定。
+  void _startElapsedTimer() {
+    _scanTimer?.cancel();
+    _scanTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || _isProcessing) {
         timer.cancel();
         return;
       }
-
       setState(() {
-        _timeLeft--;
+        _elapsedSeconds++;
       });
-
-      if (_timeLeft <= 0) {
-        timer.cancel();
-        _accelSubscription?.cancel(); // 掃描時間到，關閉晃動偵測
-
-        setState(() {
-          _isProcessing = true; // 進入等待後端回應狀態
-        });
-
-        // 掃描時間到，停止串流並彙整資料送後端
-        await _stopScanAndSubmit(_networkFuture!, _bluetoothFuture!);
-      }
     });
+  }
+
+  Future<void> _finishScanByUser() async {
+    if (_isProcessing) return;
+    _scanTimer?.cancel();
+    _accelSubscription?.cancel();
+    setState(() {
+      _isProcessing = true;
+    });
+    await _stopScanAndSubmit(_networkFuture!, _bluetoothFuture!);
   }
 
   void _startScanBeamAnimation() {
@@ -154,27 +155,19 @@ class _ScanScreenState extends State<ScanScreen> {
       );
 
       // 門檻值：8.0 大約是明顯的快速手抖或移動
-      if (acceleration > 8.0 && !_showShakeWarning) {
+      // 門檻提高：允許緩慢移動鏡頭掃描，只有明顯甩動才提示
+      if (acceleration > 14.0 && !_showShakeWarning) {
         _handleShakeDetected();
       }
     });
   }
 
-  /// 📍 處理晃動事件：重置所有掃描進度
+  /// 移動鏡頭是允許的；過大晃動只提示，不重置掃描。
   void _handleShakeDetected() {
     setState(() {
       _showShakeWarning = true;
-      _timeLeft = 6; // 重置時間
-
-      // 清空之前因為晃動可能產生的「錯誤反光點」與「殘影物件」
-      _glintTracker.reset();
-      _allBoundingBoxes.clear();
-      _isFirstFrame = true;
     });
 
-    _startTimer(); // 重啟計時器
-
-    // 顯示警告 2 秒後自動隱藏
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted && !_isProcessing) {
         setState(() => _showShakeWarning = false);
@@ -190,6 +183,8 @@ class _ScanScreenState extends State<ScanScreen> {
     final img.Image? frameImage = convertCameraImage(cameraImage);
     if (frameImage == null) return;
 
+    _lastFrame = frameImage;
+
     if (_isFirstFrame) {
       _ambientBrightnessAtStart = GlintDetector.averageBrightness(frameImage);
       _isFirstFrame = false;
@@ -198,6 +193,9 @@ class _ScanScreenState extends State<ScanScreen> {
     // --- A. 高頻任務：反光點追蹤 ---
     final candidates = _glintDetector.detect(frameImage);
     _glintTracker.addFrame(candidates);
+    if (candidates.isNotEmpty) {
+      unawaited(_captureGlintCrops(frameImage, candidates));
+    }
 
     // --- B. 低頻任務：物件偵測與截圖 ---
     if (!_objectDetectCallInFlight) {
@@ -234,17 +232,28 @@ class _ScanScreenState extends State<ScanScreen> {
     Future<List<BluetoothDeviceInfo>> bluetoothFuture,
   ) async {
     await _cameraService.stopImageStream();
+    var waitGuard = 0;
+    while (_glintCaptureInFlight && waitGuard < 20) {
+      await Future.delayed(const Duration(milliseconds: 40));
+      waitGuard++;
+    }
 
     final finalGlints = _glintTracker.computeFlickerScores(minFrames: 3);
     final highRiskGlints = finalGlints
         .where((g) => (g.flickerScore ?? 0) > 5.0)
         .length;
 
+    if (_lastFrame != null && finalGlints.isNotEmpty) {
+      await _captureGlintCrops(_lastFrame!, finalGlints, forceHighRisk: true);
+    }
+
     final userLocation = await LocationService.getCurrentLocation();
     final networkDevices = await networkFuture;
     final bluetoothDevices = await bluetoothFuture;
+    final overviewShot = _lastFrame == null
+        ? null
+        : _encodeJpegBase64(_lastFrame!, maxWidth: 480, quality: 55);
 
-    // 修正：補齊時間參數，刪除未定義的參數
     final summary = DetectionSessionSummary(
       environmentContext: widget.environmentContext ?? "未提供",
       glints: finalGlints,
@@ -258,7 +267,8 @@ class _ScanScreenState extends State<ScanScreen> {
       bluetoothDevices: bluetoothDevices,
       latitude: userLocation?.latitude,
       longitude: userLocation?.longitude,
-      screenshotBase64: null,
+      screenshotBase64: overviewShot,
+      glintScreenshotsBase64: List<String>.from(_glintScreenshotsBase64),
       scanStartedAt: _scanStartedAt ?? DateTime.now(),
       scanEndedAt: DateTime.now(),
     );
@@ -273,6 +283,68 @@ class _ScanScreenState extends State<ScanScreen> {
     if (!mounted) return;
 
     widget.onScanComplete(summary, backendResult);
+  }
+
+  Future<void> _captureGlintCrops(
+    img.Image frame,
+    List<GlintCandidate> candidates, {
+    bool forceHighRisk = false,
+  }) async {
+    if (_glintCaptureInFlight || _glintScreenshotsBase64.length >= 4) return;
+    _glintCaptureInFlight = true;
+    try {
+      for (final candidate in candidates) {
+        if (_glintScreenshotsBase64.length >= 4) break;
+        if (forceHighRisk &&
+            (candidate.flickerScore ?? 0) <= 5.0 &&
+            _glintScreenshotsBase64.isNotEmpty) {
+          continue;
+        }
+
+        final key = '${candidate.x ~/ 24}_${candidate.y ~/ 24}';
+        if (_capturedGlintKeys.contains(key)) continue;
+        _capturedGlintKeys.add(key);
+
+        final crop = _cropAroundGlint(frame, candidate);
+        img.drawCircle(
+          crop,
+          x: crop.width ~/ 2,
+          y: crop.height ~/ 2,
+          radius: math.max(8, candidate.radius + 6),
+          color: img.ColorRgb8(255, 51, 204),
+        );
+        _glintScreenshotsBase64.add(
+          base64Encode(img.encodeJpg(crop, quality: 62)),
+        );
+      }
+    } catch (e) {
+      debugPrint('glint 截圖失敗: $e');
+    } finally {
+      _glintCaptureInFlight = false;
+    }
+  }
+
+  img.Image _cropAroundGlint(img.Image frame, GlintCandidate candidate) {
+    const size = 180;
+    final left = (candidate.x - size ~/ 2).clamp(0, math.max(0, frame.width - 1)).toInt();
+    final top = (candidate.y - size ~/ 2).clamp(0, math.max(0, frame.height - 1)).toInt();
+    final width = math.min(size, frame.width - left).clamp(1, frame.width).toInt();
+    final height = math.min(size, frame.height - top).clamp(1, frame.height).toInt();
+    return img.copyCrop(
+      frame,
+      x: left,
+      y: top,
+      width: width,
+      height: height,
+    );
+  }
+
+  String _encodeJpegBase64(img.Image frame, {int maxWidth = 480, int quality = 55}) {
+    var output = frame;
+    if (frame.width > maxWidth) {
+      output = img.copyResize(frame, width: maxWidth);
+    }
+    return base64Encode(img.encodeJpg(output, quality: quality));
   }
 
   @override
@@ -350,7 +422,7 @@ class _ScanScreenState extends State<ScanScreen> {
                     ),
                     SizedBox(width: 8),
                     Text(
-                      "晃動過大！掃描已重置",
+                      "晃動過大，請放慢移動速度",
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 20,
@@ -363,28 +435,75 @@ class _ScanScreenState extends State<ScanScreen> {
             ),
 
           Positioned(
-            bottom: 100,
+            top: 54,
+            left: 20,
+            right: 20,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                '可移動鏡頭說明\n請緩慢移動鏡頭掃描插座、掛勾、煙霧偵測器等位置，完成後按下下方結束鍵，如同手機錄影結束。',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  height: 1.4,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+
+          Positioned(
+            bottom: 36,
             left: 0,
             right: 0,
             child: Column(
               children: [
                 if (!_isProcessing) ...[
                   Text(
-                    '$_timeLeft',
-                    style: TextStyle(
-                      fontSize: 80,
-                      color: _showShakeWarning
-                          ? Colors.redAccent
-                          : Colors.white,
-                      fontWeight: FontWeight.bold,
-                      shadows: const [
-                        Shadow(color: Colors.black, blurRadius: 10),
-                      ],
+                    _elapsedSeconds.toString().padLeft(2, '0'),
+                    style: const TextStyle(
+                      fontSize: 28,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      shadows: [Shadow(color: Colors.black, blurRadius: 8)],
                     ),
                   ),
+                  const SizedBox(height: 8),
                   const Text(
-                    "掃描進行中...",
-                    style: TextStyle(color: Colors.white, fontSize: 18),
+                    '掃描進行中，可移動鏡頭',
+                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                  const SizedBox(height: 18),
+                  GestureDetector(
+                    onTap: _finishScanByUser,
+                    child: Container(
+                      width: 78,
+                      height: 78,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 4),
+                      ),
+                      child: Center(
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '結束掃描',
+                    style: TextStyle(color: Colors.white70, fontSize: 14),
                   ),
                 ] else ...[
                   const CircularProgressIndicator(color: Colors.white),

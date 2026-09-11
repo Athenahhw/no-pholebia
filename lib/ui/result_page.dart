@@ -1,5 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'dart:ui';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -8,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../detection/detection_result.dart';
 import '../services/location_service.dart';
 import '../services/police_service.dart';
+import 'high_risk_static_assets.dart';
 
 enum RiskLevel { low, medium, high }
 
@@ -56,6 +58,9 @@ class _ResultPageState extends State<ResultPage> {
     super.initState();
     _currentRisk = widget.riskLevel;
     _currentScore = widget.score;
+    if (_isAdminDemoMode) {
+      debugPrint('結果頁使用後門 override 分數，layout 與一般模式相同');
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateLineY();
       if (_currentRisk == RiskLevel.high) {
@@ -70,67 +75,8 @@ class _ResultPageState extends State<ResultPage> {
     super.dispose();
   }
 
+  // 後門演示模式旗標，不要刪。介面與一般掃描結果共用同一套 layout。
   bool get _isAdminDemoMode => widget.scoreSource == 'backend_admin_override';
-//後門演示模式，不要刪
-  String _demoSummaryForRisk() {
-    switch (_currentRisk) {
-      case RiskLevel.high:
-        return '偵測到非對稱的幾何小黑孔與微光特徵，該掛鉤外殼雖為常規塑料，但其中一顆十字螺絲的中心深度與光線吸收率，遠高於正常金屬螺絲，疑似為「螺絲型微型鏡頭」之偽裝。\n綜合評估危險指數：${_formatScore(_currentScore)}%\n\n請勿慌張或破壞犯罪現場，使用衛生紙或衣物遮蔽該處即可。';
-      case RiskLevel.medium:
-        return '偵測到可疑的幾何反光與周邊訊號干擾，該區域存在中度風險，需要進一步檢查。\n綜合評估危險指數：${_formatScore(_currentScore)}%\n\n請先確認環境內的插座、掛勾、芳香劑與煙霧偵測器。';
-      case RiskLevel.low:
-        return '目前未見明顯異常光點與可疑訊號，整體環境相對正常。\n綜合評估危險指數：${_formatScore(_currentScore)}%\n\n仍建議在進入陌生環境前做基本巡查，保持隱私安全。';
-    }
-  }
-
-  List<Map<String, String>> _demoCardsForRisk() {
-    switch (_currentRisk) {
-      case RiskLevel.high:
-        return [
-          {'title': '可疑反光點', 'status': '偵測到高風險反光特徵'},
-          {'title': 'Wi-Fi 連線', 'status': '偵測到可疑無線訊號'},
-          {'title': '藍芽訊號', 'status': '偵測到可疑藍芽裝置'},
-        ];
-      case RiskLevel.medium:
-        return [
-          {'title': '可疑反光點', 'status': '出現中度異常反光'},
-          {'title': 'Wi-Fi 連線', 'status': '附近有可疑 Wi-Fi 活動'},
-          {'title': '藍芽訊號', 'status': '附近有可疑藍芽裝置'},
-        ];
-      case RiskLevel.low:
-        return [
-          {'title': '可疑反光點', 'status': '未偵測到可疑反光點'},
-          {'title': 'Wi-Fi 連線', 'status': '未偵測到可疑 Wi-Fi'},
-          {'title': '藍芽訊號', 'status': '未偵測到可疑藍芽'},
-        ];
-    }
-  }
-
-  List<Map<String, dynamic>> _riskChecklistEntries() {
-    switch (_currentRisk) {
-      case RiskLevel.high:
-        return [
-          {'text': '偵測到高風險異常訊號，請立即遮蔽可疑位置。', 'showDot': true},
-          {'text': '優先檢查插座、掛勾、煙霧偵測器與延長線。', 'showDot': true},
-          {'text': '保持現場完整，避免直接破壞可疑物。', 'showDot': true},
-          {'text': '若需要，直接按下生成報案敘述。', 'showDot': false},
-        ];
-      case RiskLevel.medium:
-        return [
-          {'text': '偵測到中風險異常訊號，請先觀察周遭環境。', 'showDot': true},
-          {'text': '優先檢查可疑插座、掛勾與遮蔽物。', 'showDot': true},
-          {'text': '若有異常，先完成遮蔽再離開現場。', 'showDot': true},
-          {'text': '必要時聯絡管理單位或警局。', 'showDot': false},
-        ];
-      case RiskLevel.low:
-        return [
-          {'text': '目前風險偏低，但仍建議留意周遭環境。', 'showDot': true},
-          {'text': '進入陌生空間前可快速巡視插座與掛勾。', 'showDot': true},
-          {'text': '若再發現異常，可重新啟動掃描。', 'showDot': true},
-          {'text': '維持基本隱私保護即可。', 'showDot': false},
-        ];
-    }
-  }
 
   void _updateLineY() {
     final renderBox = _lineKey.currentContext?.findRenderObject() as RenderBox?;
@@ -345,10 +291,6 @@ class _ResultPageState extends State<ResultPage> {
   }
 
   String _riskSummaryText() {
-    if (_isAdminDemoMode) {
-      return _demoSummaryForRisk();
-    }
-
     final aiSection = widget.backendResult?['ai_reasoning_and_actions'];
     if (aiSection is Map) {
       final summary = aiSection['risk_assessment_summary']?.toString();
@@ -674,126 +616,29 @@ class _ResultPageState extends State<ResultPage> {
     Color themeColor,
     Color textColor,
   ) {
-    if (_isAdminDemoMode) {
-      final cardsData = _demoCardsForRisk();
-      return Column(
-        children: [
-          Container(
-            width: width,
-            height: 80,
-            decoration: BoxDecoration(
-              color: themeColor.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: cardsData.length,
-              onPageChanged: (index) {
-                setState(() {
-                  _currentCardIndex = index;
-                });
-              },
-              itemBuilder: (context, index) {
-                final card = cardsData[index];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16.0,
-                    vertical: 12.0,
-                  ),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 44,
-                        height: 44,
-                        child: Icon(
-                          index == 0
-                              ? Icons.light_mode_outlined
-                              : index == 1
-                              ? Icons.wifi
-                              : Icons.bluetooth,
-                          size: 32,
-                          color: themeColor,
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              card['title'] as String,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: themeColor,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              card['status'] as String,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w500,
-                                color: textColor,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(3, (index) {
-              final bool isSelected = _currentCardIndex == index;
-              return Container(
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: themeColor.withOpacity(isSelected ? 1.0 : 0.5),
-                ),
-              );
-            }),
-          ),
-        ],
-      );
+    final summary = widget.scanSummary;
+    final backend = widget.backendResult;
+    bool hasGlint = false;
+    bool hasSuspiciousWifi = false;
+    bool hasSuspiciousBle = false;
+
+    if (summary != null) {
+      hasGlint = summary.highRiskGlintCount > 0 || summary.glints.isNotEmpty;
+      hasSuspiciousWifi = summary.networkDevices.any((d) => d.looksLikeCamera);
+      hasSuspiciousBle = summary.bluetoothDevices.any((d) => d.suspicious);
     }
 
-    final summary = widget.scanSummary;
-bool hasGlint = false;
-bool hasSuspiciousWifi = false;
-bool hasSuspiciousBle = false;
-
-if (_isAdminDemoMode) {
-  hasGlint = _currentRisk != RiskLevel.low;
-  hasSuspiciousWifi = _currentRisk != RiskLevel.low;
-  hasSuspiciousBle = _currentRisk != RiskLevel.low;
-} else {
-  final summary = widget.scanSummary;
-  final backend = widget.backendResult;
-
-  // 1. 從本地掃描數據判斷
-  if (summary != null) {
-    hasGlint = summary.highRiskGlintCount > 0 || summary.glints.isNotEmpty;
-    hasSuspiciousWifi = summary.networkDevices.any((d) => d.looksLikeCamera);
-    hasSuspiciousBle = summary.bluetoothDevices.any((d) => d.suspicious);
-  }
-  
-  // 2. 若後端有覆蓋參數則優先採用
-  if (backend != null) {
-    if (backend.containsKey('has_glint')) hasGlint = backend['has_glint'] == true;
-    if (backend.containsKey('has_wifi_risk')) hasSuspiciousWifi = backend['has_wifi_risk'] == true;
-    if (backend.containsKey('has_ble_risk')) hasSuspiciousBle = backend['has_ble_risk'] == true;
-  }
-}
+    if (backend != null) {
+      if (backend.containsKey('has_glint')) {
+        hasGlint = backend['has_glint'] == true;
+      }
+      if (backend.containsKey('has_wifi_risk')) {
+        hasSuspiciousWifi = backend['has_wifi_risk'] == true;
+      }
+      if (backend.containsKey('has_ble_risk')) {
+        hasSuspiciousBle = backend['has_ble_risk'] == true;
+      }
+    }
 
     final List<Map<String, dynamic>> cardsData = [
       {
@@ -916,80 +761,6 @@ if (_isAdminDemoMode) {
 
   // 高風險詳細內容
   Widget _buildHighRiskContent(Color textColor) {
-    if (_isAdminDemoMode) {
-      final PoliceStation? policeStation = _nearestPolice;
-      final String policeName = policeStation?.name ?? '附近警察單位';
-      final String policePhone = policeStation?.phone ?? '110';
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _demoSummaryForRisk(),
-            style: TextStyle(fontSize: 16, color: textColor, height: 1.45),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            '已根據目前偵測結果生成對應內容。',
-            style: TextStyle(fontSize: 16, color: textColor, height: 1.35),
-          ),
-          const SizedBox(height: 16),
-          ..._riskChecklistEntries().map(
-            (entry) => _buildListItem(
-              entry['text'] as String,
-              entry['showDot'] as bool,
-              textColor,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            '附近有 $policeName，您可以考慮報案。\n電話：',
-            style: TextStyle(fontSize: 16, color: textColor),
-          ),
-          GestureDetector(
-            onTap: () => _makePhoneCall(policePhone),
-            child: Text(
-              policePhone,
-              style: const TextStyle(
-                fontSize: 16,
-                color: Colors.blue,
-                decoration: TextDecoration.underline,
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Center(
-            child: GestureDetector(
-              onTap: _handleReportAction,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF395938),
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      '生成報案敘述',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
     final String policeName = _nearestPolice?.name ?? '附近警察單位';
     final String policePhone = _nearestPolice?.phone ?? '110';
     final String policeDistance =
@@ -1005,10 +776,9 @@ if (_isAdminDemoMode) {
           style: TextStyle(fontSize: 16, color: textColor, height: 1.45),
         ),
         const SizedBox(height: 16),
-
+        _buildGlintEvidenceGallery(textColor),
         const SizedBox(height: 20),
 
-        // 📍 警局與電話
         Text(
           '附近有 $policeName$policeDistance，您可以考慮報案。\n電話：',
           style: TextStyle(fontSize: 16, color: textColor),
@@ -1026,7 +796,6 @@ if (_isAdminDemoMode) {
         ),
         const SizedBox(height: 24),
 
-        // 報案按鈕
         Center(
           child: GestureDetector(
             onTap: _handleReportAction,
@@ -1053,6 +822,81 @@ if (_isAdminDemoMode) {
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildGlintEvidenceGallery(Color textColor) {
+    final liveBytes = <Uint8List>[];
+    for (final encoded in widget.scanSummary?.glintScreenshotsBase64 ?? const <String>[]) {
+      try {
+        liveBytes.add(base64Decode(encoded.split(',').last));
+      } catch (_) {}
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '異常反光點截圖',
+          style: TextStyle(
+            fontSize: 16,
+            color: textColor,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (liveBytes.isNotEmpty)
+          SizedBox(
+            height: 112,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: liveBytes.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.memory(
+                    liveBytes[index],
+                    width: 112,
+                    height: 112,
+                    fit: BoxFit.cover,
+                  ),
+                );
+              },
+            ),
+          )
+        else
+          SizedBox(
+            height: 112,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: HighRiskStaticAssets.glintCrops.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.asset(
+                    HighRiskStaticAssets.glintCrops[index],
+                    width: 112,
+                    height: 112,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      if (index != 0) return const SizedBox.shrink();
+                      return Container(
+                        width: 220,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '尚未截到反光點。之後可把 glint_crop_1.jpg 放到 assets/images/high_risk_static/',
+                          style: TextStyle(fontSize: 13, color: textColor, height: 1.35),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
       ],
     );
   }

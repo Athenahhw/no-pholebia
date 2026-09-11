@@ -90,6 +90,37 @@ def arm_next_risk_override(risk_percentage: float, note: Optional[str] = None):
     return payload
 
 
+def peek_next_risk_override() -> Optional[dict]:
+    """讀取目前 armed 的 override，不刪除。"""
+    conn = _get_connection()
+    row = conn.execute(
+        "SELECT value FROM runtime_controls WHERE key = ?",
+        ("next_risk_override",),
+    ).fetchone()
+    conn.close()
+    if row is None:
+        return None
+    try:
+        parsed = json.loads(row["value"])
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    return None
+
+
+def clear_next_risk_override() -> bool:
+    conn = _get_connection()
+    cursor = conn.execute(
+        "DELETE FROM runtime_controls WHERE key = ?",
+        ("next_risk_override",),
+    )
+    conn.commit()
+    deleted = cursor.rowcount > 0
+    conn.close()
+    return deleted
+
+
 def consume_next_risk_override() -> Optional[dict]:
     """
     取出並刪除一次性 override；如果沒設定則回傳 None。
@@ -124,8 +155,10 @@ def save_record(payload, result: dict) -> int:
     conn = _get_connection()
 
     request_dict = payload.model_dump(by_alias=True)
-    has_screenshot = bool(request_dict.get("screenshotBase64"))
-    request_dict["screenshotBase64"] = None if not has_screenshot else "(已省略,未儲存於資料庫)"
+    has_screenshot = bool(request_dict.get("screenshotBase64")) or bool(request_dict.get("glintScreenshotsBase64"))
+    request_dict["screenshotBase64"] = None if not request_dict.get("screenshotBase64") else "(已省略,未儲存於資料庫)"
+    if request_dict.get("glintScreenshotsBase64"):
+        request_dict["glintScreenshotsBase64"] = f"(已省略 {len(request_dict['glintScreenshotsBase64'])} 張 glint 截圖)"
 
     cursor = conn.execute(
         """

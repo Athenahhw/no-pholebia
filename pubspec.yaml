@@ -86,6 +86,7 @@ flutter:
     - assets/images/Info.png
     - assets/images/Clock.png
     - assets/images/close.png
+    - assets/images/high_risk_static/
     - assets/json/cases.json
     - assets/json/police_stations.json
   #   - images/a_dot_burr.jpeg

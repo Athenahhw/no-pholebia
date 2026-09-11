@@ -104,6 +104,7 @@ class DetectionSessionSummary {
   final bool remoteYoloAvailable;
   final String? environmentContext;
   final String? screenshotBase64;
+  final List<String> glintScreenshotsBase64;
   final List<NetworkDevice> networkDevices;
   final List<BluetoothDeviceInfo> bluetoothDevices;
   final double? latitude; // 新增:掃描當下的GPS緯度,可能是null(定位失敗/被拒絕權限)
@@ -121,6 +122,7 @@ class DetectionSessionSummary {
     this.remoteYoloAvailable = false,
     this.environmentContext,
     this.screenshotBase64,
+    this.glintScreenshotsBase64 = const [],
     this.networkDevices = const [],
     this.bluetoothDevices = const [],
     this.latitude,
@@ -139,6 +141,7 @@ class DetectionSessionSummary {
     'remoteYoloAvailable': remoteYoloAvailable,
     'environmentContext': environmentContext,
     'screenshotBase64': screenshotBase64,
+    'glintScreenshotsBase64': glintScreenshotsBase64,
     'networkDevices': networkDevices.map((d) => d.toJson()).toList(),
     'bluetoothDevices': bluetoothDevices.map((d) => d.toJson()).toList(),
     'latitude': latitude,

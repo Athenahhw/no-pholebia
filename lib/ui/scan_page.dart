@@ -142,10 +142,10 @@ class _ScanPageState extends State<ScanPage>
       1.0,
     );
 
-    const wifiWeight = 4.0;
-    const bluetoothWeight = 3.5;
-    const glintWeight = 2.5;
-    const bias = -2.5;
+    const wifiWeight = 0.05;
+    const bluetoothWeight = 0.04;
+    const glintWeight = 3.2;
+    const bias = -3.4;
 
     final rawScore =
         (wifiDetected ? wifiWeight : 0.0) +

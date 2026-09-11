@@ -87,6 +87,7 @@ class AnalyzeRequest(BaseModel):
     object_detection_available: bool = Field(False, alias="remoteYoloAvailable")
     environment_context: Optional[str] = Field(None, alias="environmentContext")
     screenshot_base64: Optional[str] = Field(None, alias="screenshotBase64")
+    glint_screenshots_base64: List[str] = Field(default_factory=list, alias="glintScreenshotsBase64")
     network_devices: List[NetworkDevice] = Field(default_factory=list, alias="networkDevices")
     bluetooth_devices: List[BluetoothDeviceInfo] = Field(default_factory=list, alias="bluetoothDevices")
     latitude: Optional[float] = Field(None, alias="latitude")

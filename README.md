@@ -20,7 +20,13 @@ backdoor:
 開後端（照你原本方式）
 在 backend 目錄輸入
 python admin_override.py 12.3 --note demo
-下一次掃描結果會是 12.3%，再下一次就恢復正常 AI 計算
+下一次掃描會略過 Gemini，立刻回傳 12.3%，再下一次恢復正常 AI 計算
+查目前有沒有 armed：python admin_override.py --status
+取消：python admin_override.py --clear
+
+重要：override 是一次性，且必須打到同一個後端資料庫。
+若 App 連不上後端（逾時/IP 不對），會走手機本地算分，看起來就像後門沒生效。
+現在 armed 後會跳過 Gemini，避免分析太久讓 App 逾時改走本地算分。
 
 presentation:
 演示前 10 分鐘

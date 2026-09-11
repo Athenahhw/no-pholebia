@@ -70,8 +70,9 @@ def calculate_threat_score(
     # 4. 權重與偏置 (Sigmoid 邏輯)
     # 家中常見 Wi‑Fi / 藍牙裝置很多，這些僅作輔助資訊，不能像針孔鏡頭反光一樣重。
     # 將無線設備權重明顯降低，避免正常家用環境被誤判為高風險。
-    W_WIFI = 1.4
-    W_BLUETOOTH = 1.2
+    # 公共 Wi-Fi / 藍牙極為常見，權重降到接近 0，避免把一般無線環境當成針孔證據。
+    W_WIFI = 0.05
+    W_BLUETOOTH = 0.04
     W_GLINT = 3.2
     BIAS = -3.4
 
@@ -101,9 +102,9 @@ def calculate_threat_score(
 
     wireless_bonus = 0.0
     if wifi_detected:
-        wireless_bonus += 20.0
+        wireless_bonus += 0.5
     if bt_detected:
-        wireless_bonus += 15.0
+        wireless_bonus += 0.4
 
     return {
         "risk_percentage": risk_percentage,

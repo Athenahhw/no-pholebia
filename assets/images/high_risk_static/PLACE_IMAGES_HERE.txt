@@ -1,0 +1,10 @@
+把之後要寫死的高風險介面圖片放在這個資料夾。
+
+必要檔名（有掃描截圖時仍會優先用即時圖）：
+- glint_crop_1.jpg
+- glint_crop_2.jpg
+- glint_crop_3.jpg
+
+可選：
+- summary_block.png  （風險說明文字區塊）
+- gauge_block.png    （儀表分數區塊；需在 high_risk_static_assets.dart 把 useFrozenGauge 設成 true）

@@ -46,6 +46,9 @@ def run_anti_pinhole_inference(payload) -> dict:
     network_devices = getattr(payload, "network_devices", getattr(payload, "networkDevices", []))
     bluetooth_devices = getattr(payload, "bluetooth_devices", getattr(payload, "bluetoothDevices", []))
     screenshot_b64 = getattr(payload, "screenshot_base64", getattr(payload, "screenshotBase64", None))
+    glint_shots = getattr(payload, "glint_screenshots_base64", getattr(payload, "glintScreenshotsBase64", [])) or []
+    if not screenshot_b64 and glint_shots:
+        screenshot_b64 = glint_shots[0]
 
     # ---- 1. 算輔助訊號分數(給LLM參考,不是最終依據) ----
     glint_score = min(1.0, high_risk_glint_count / 3.0) if high_risk_glint_count else 0.0
@@ -73,47 +76,72 @@ def run_anti_pinhole_inference(payload) -> dict:
     )
     print(f"輔助訊號分數計算完成(僅供LLM參考): {threat_result['risk_percentage']}% ({threat_result['risk_level']})")
 
-    # ---- 2. 交給 Gemini 做真正的多模態語意推理 ----
-    print("正在調用 Gemini 進行多模態語意推理(含截圖分析)...")
+    # ---- 2. 交給 Gemini（後門 override 時略過） ----
     suspicious_item_summary = _summarize_suspicious_item(payload)
 
 # 讀取前端實際定位結果,定位失敗時用台北101座標當保底(避免None顯示錯誤)
     user_lat = payload.latitude if payload.latitude is not None else 25.0501
     user_lng = payload.longitude if payload.longitude is not None else 121.5132
 
-    llm_result = generate_safety_plan_with_prompt(
-        environment_type=env_context or "未提供",
-        suspicious_item=suspicious_item_summary,
-        aux_risk_percentage=threat_result["risk_percentage"],
-        aux_risk_level=threat_result["risk_level"],
-        glint_score=glint_score,
-        high_risk_glint_count=high_risk_glint_count,
-        total_glint_count=total_glint_count,
-        wifi_detected=wifi_camera_detected,
-        network_device_count=len(network_devices),
-        suspicious_network_device_count=suspicious_network_device_count,
-        bluetooth_device_count=len(bluetooth_devices),
-        suspicious_bluetooth_device_count=suspicious_bluetooth_device_count,
-        user_lat=user_lat,
-        user_lng=user_lng,
-        screenshot_base64=screenshot_b64,
-    )
+    override_payload = storage.peek_next_risk_override()
+    skip_gemini = override_payload is not None
+
+    if skip_gemini:
+        print("偵測到後門 override，略過 Gemini，直接回傳指定分數。")
+        llm_result = {
+            "risk_assessment_summary": (
+                f"初步評估於 {env_context or '未提供'} 的「{suspicious_item_summary}」"
+                f"發現異常光學反光訊號，系統算分機率為 {threat_result['risk_percentage']}%。"
+            ),
+            "police_cheat_sheet": (
+                f"報案小抄：我在座標 ({user_lat}, {user_lng}) 的 {env_context or '未提供'}，"
+                f"發現【{suspicious_item_summary}】有疑似針孔裝置，請派員協助處理。"
+            ),
+            "ai_assistant_summary": (
+                f"在 {env_context or '未提供'} 掃描到疑慮物品「{suspicious_item_summary}」，"
+                f"當前風險等級判定為 {threat_result['risk_level']}，請優先採取遮蔽防護動作。"
+            ),
+            "action_cards": [
+                f"1. 請使用不透明膠帶或貼紙遮蔽 {suspicious_item_summary}",
+                "2. 保持冷靜並注意自身隱私安全",
+                "3. 攜帶個人貴重物品並視情況聯絡場所管理員",
+            ],
+        }
+        try:
+            final_risk_percentage = min(
+                max(float(override_payload.get("risk_percentage", threat_result["risk_percentage"])), 0.0),
+                30.0,
+            )
+        except Exception:
+            final_risk_percentage = min(max(float(threat_result["risk_percentage"]), 0.0), 30.0)
+        score_source = "backend_admin_override"
+        storage.consume_next_risk_override()
+    else:
+        print("正在調用 Gemini 進行多模態語意推理(含截圖分析)...")
+        llm_result = generate_safety_plan_with_prompt(
+            environment_type=env_context or "未提供",
+            suspicious_item=suspicious_item_summary,
+            aux_risk_percentage=threat_result["risk_percentage"],
+            aux_risk_level=threat_result["risk_level"],
+            glint_score=glint_score,
+            high_risk_glint_count=high_risk_glint_count,
+            total_glint_count=total_glint_count,
+            wifi_detected=wifi_camera_detected,
+            network_device_count=len(network_devices),
+            suspicious_network_device_count=suspicious_network_device_count,
+            bluetooth_device_count=len(bluetooth_devices),
+            suspicious_bluetooth_device_count=suspicious_bluetooth_device_count,
+            user_lat=user_lat,
+            user_lng=user_lng,
+            screenshot_base64=screenshot_b64,
+        )
+        llm_risk_percentage = float(llm_result.get("risk_percentage", threat_result["risk_percentage"]))
+        final_risk_percentage = min(max(llm_risk_percentage, 0.0), 30.0)
+        score_source = "backend_ai"
 
     # 提取文案 (優先使用新 Key，並提供 fallback 保底)
     risk_assessment = llm_result.get("risk_assessment_summary") or llm_result.get("plausibility_reasoning", "")
     ai_summary = llm_result.get("ai_assistant_summary", "")
-
-    llm_risk_percentage = float(llm_result.get("risk_percentage", threat_result["risk_percentage"]))
-    final_risk_percentage = min(max(llm_risk_percentage, 0.0), 30.0)
-    score_source = "backend_ai"
-
-    override_payload = storage.consume_next_risk_override()
-    if override_payload is not None:
-        try:
-            final_risk_percentage = min(max(float(override_payload.get("risk_percentage", final_risk_percentage)), 0.0), 30.0)
-            score_source = "backend_admin_override"
-        except Exception:
-            pass
 
     final_risk_level = "high" if final_risk_percentage >= 25.0 else "medium" if final_risk_percentage >= 12.0 else "low"
 
