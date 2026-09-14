@@ -168,14 +168,18 @@ class _ResultPageState extends State<ResultPage> {
     final String? policeCheatSheet =
         widget.backendResult?['policeCheatSheet']?.toString() ??
         widget.backendResult?['police_cheat_sheet']?.toString();
+    final String demoReportBody =
+        '你好，我要報案。\n'
+        '我現在在國立臺北教育大學內，發現疑似遭人安裝針孔攝影機。\n\n'
+        '・ 【具體位置】位於 [請補充實際場館與樓層等地點細節]。\n'
+        '・ 【異常物體】門板上的一面常規塑膠掛鉤。\n'
+        '・ 【異常細節】該掛鉤外殼雖為一般塑料，但上面的固定螺絲有明顯異常。其中一顆十字螺絲的中心深度與光線吸收率遠高於正常金屬螺絲，且經檢測含有異常訊號。';
     final String reportBody =
-        (policeCheatSheet != null && policeCheatSheet.trim().isNotEmpty)
-        ? policeCheatSheet.trim()
-        : '你好，我要報案。\n'
-              '我現在在國立臺北教育大學內，發現疑似遭人安裝針孔攝影機。\n\n'
-              '・ 【具體位置】位於 [請補充實際場館與樓層等地點細節]。\n'
-              '・ 【異常物體】門板上的一面常規塑膠掛鉤。\n'
-              '・ 【異常細節】該掛鉤外殼雖為一般塑料，但上面的固定螺絲有明顯異常。其中一顆十字螺絲的中心深度與光線吸收率遠高於正常金屬螺絲，且經檢測含有異常訊號。';
+        _isAdminDemoMode
+            ? demoReportBody
+            : ((policeCheatSheet != null && policeCheatSheet.trim().isNotEmpty)
+                ? policeCheatSheet.trim()
+                : demoReportBody);
 
     showModalBottomSheet(
       context: context,
@@ -311,6 +315,7 @@ class _ResultPageState extends State<ResultPage> {
     final bool isLow = _currentRisk == RiskLevel.low;
     final bool isMedium = _currentRisk == RiskLevel.medium;
     final bool isHigh = _currentRisk == RiskLevel.high;
+    final bool useDemoHighRiskLayout = isHigh && _isAdminDemoMode;
 
     final Color themeColor = isLow
         ? const Color(0xFF4583FF)
@@ -346,8 +351,8 @@ class _ResultPageState extends State<ResultPage> {
               child: SafeArea(
                 child: Stack(
                   children: [
-                    // 低 / 中風險
-                    if (!isHigh)
+                    // 低 / 中風險，並在 Demo 高風險時使用相同卡片式版型
+                    if (!isHigh || useDemoHighRiskLayout)
                       Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -436,7 +441,35 @@ class _ResultPageState extends State<ResultPage> {
 
                             const SizedBox(height: 16),
 
-                            if (_hasGlintEvidence) ...[
+                            if (useDemoHighRiskLayout) ...[
+                              SizedBox(
+                                width: contentWidth,
+                                child: Center(
+                                  child: GestureDetector(
+                                    onTap: _handleReportAction,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 24,
+                                        vertical: 12,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF395938),
+                                        borderRadius: BorderRadius.circular(24),
+                                      ),
+                                      child: const Text(
+                                        '查看報案敘述',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                            ] else if (_hasGlintEvidence) ...[
                               SizedBox(
                                 width: contentWidth,
                                 child: _buildGlintEvidenceGallery(textContentColor),
@@ -457,8 +490,10 @@ class _ResultPageState extends State<ResultPage> {
                                   ),
                                   const SizedBox(height: 4),
                                   _buildListItem(
-                                    isLow
-                                      ? '您所在環境無隱藏針孔攝影機，請安心使用。'
+                                    isLow || useDemoHighRiskLayout
+                                      ? (isLow
+                                            ? '您所在環境無隱藏針孔攝影機，請安心使用。'
+                                            : '環境存在潛在風險，請謹慎使用。')
                                       : '環境存在潛在風險，請謹慎使用。',
                                     false,
                                     textContentColor,
@@ -473,7 +508,7 @@ class _ResultPageState extends State<ResultPage> {
                       ),
 
                     // 高風險 (漸隱 + 滾動)
-                    if (isHigh)
+                    if (isHigh && !useDemoHighRiskLayout)
                       ShaderMask(
                         shaderCallback: (Rect bounds) {
                           return const LinearGradient(
