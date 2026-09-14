@@ -41,6 +41,7 @@ class _ResultPageState extends State<ResultPage> {
 
   late RiskLevel _currentRisk;
   late double _currentScore;
+  Uint8List? _selectedEvidenceImage;
 
   // 滑動面板控制器與當前頁面索引
   final PageController _pageController = PageController();
@@ -77,6 +78,10 @@ class _ResultPageState extends State<ResultPage> {
 
   // 後門演示模式旗標，不要刪。介面與一般掃描結果共用同一套 layout。
   bool get _isAdminDemoMode => widget.scoreSource == 'backend_admin_override';
+
+  bool get _hasGlintEvidence =>
+      (widget.scanSummary?.glintScreenshotsBase64.isNotEmpty ?? false) ||
+      (widget.scanSummary?.glints.isNotEmpty ?? false);
 
   void _updateLineY() {
     final renderBox = _lineKey.currentContext?.findRenderObject() as RenderBox?;
@@ -331,6 +336,9 @@ class _ResultPageState extends State<ResultPage> {
             ),
           ),
 
+          if (_selectedEvidenceImage != null)
+            _buildEvidencePreviewOverlay(),
+
           // 2. 主要內容
           SafeArea(
             child: Stack(
@@ -424,6 +432,14 @@ class _ResultPageState extends State<ResultPage> {
                         ),
 
                         const SizedBox(height: 16),
+
+                        if (_hasGlintEvidence) ...[
+                          SizedBox(
+                            width: contentWidth,
+                            child: _buildGlintEvidenceGallery(textContentColor),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
 
                         // 下方傳入文字列表
                         SizedBox(
@@ -776,8 +792,10 @@ class _ResultPageState extends State<ResultPage> {
           style: TextStyle(fontSize: 16, color: textColor, height: 1.45),
         ),
         const SizedBox(height: 16),
-        _buildGlintEvidenceGallery(textColor),
-        const SizedBox(height: 20),
+        if (_hasGlintEvidence) ...[
+          _buildGlintEvidenceGallery(textColor),
+          const SizedBox(height: 20),
+        ],
 
         Text(
           '附近有 $policeName$policeDistance，您可以考慮報案。\n電話：',
@@ -841,6 +859,13 @@ class _ResultPageState extends State<ResultPage> {
       }
     }
 
+    final imageList = liveBytes.isNotEmpty
+        ? liveBytes
+        : List.generate(
+            HighRiskStaticAssets.glintCrops.length,
+            (index) => Uint8List(0),
+          );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -853,35 +878,40 @@ class _ResultPageState extends State<ResultPage> {
           ),
         ),
         const SizedBox(height: 8),
-        if (liveBytes.isNotEmpty)
-          SizedBox(
-            height: 112,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: liveBytes.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.memory(
-                    liveBytes[index],
-                    width: 112,
-                    height: 112,
-                    fit: BoxFit.cover,
+        SizedBox(
+          height: 112,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: imageList.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final imageBytes = imageList[index];
+              if (liveBytes.isNotEmpty) {
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedEvidenceImage = imageBytes;
+                    });
+                  },
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.memory(
+                      imageBytes,
+                      width: 112,
+                      height: 112,
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 );
-              },
-            ),
-          )
-        else
-          SizedBox(
-            height: 112,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: HighRiskStaticAssets.glintCrops.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                return ClipRRect(
+              }
+
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedEvidenceImage = null;
+                  });
+                },
+                child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: Image.asset(
                     HighRiskStaticAssets.glintCrops[index],
@@ -900,10 +930,73 @@ class _ResultPageState extends State<ResultPage> {
                       );
                     },
                   ),
-                );
-              },
+                ),
+              );
+            },
+          ),
+        ),
+        if (_selectedEvidenceImage != null)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Container(),
             ),
           ),
+      ],
+    );
+  }
+
+  void _showImageViewer(Uint8List imageBytes) {
+    setState(() {
+      _selectedEvidenceImage = imageBytes;
+    });
+  }
+
+  void _closeImageViewer() {
+    setState(() {
+      _selectedEvidenceImage = null;
+    });
+  }
+
+  Widget _buildEvidencePreviewOverlay() {
+    if (_selectedEvidenceImage == null) return const SizedBox.shrink();
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Container(
+            color: Colors.black.withValues(alpha: 0.8),
+          ),
+        ),
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Image.memory(
+                    _selectedEvidenceImage!,
+                    fit: BoxFit.contain,
+                    width: MediaQuery.of(context).size.width * 0.85,
+                    height: MediaQuery.of(context).size.height * 0.7,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: _closeImageViewer,
+                  icon: const Icon(Icons.close),
+                  label: const Text('返回結果頁'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF395938),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }

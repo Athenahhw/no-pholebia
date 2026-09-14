@@ -403,10 +403,45 @@ class _ScanScreenState extends State<ScanScreen> {
             ),
           ),
 
+          Positioned(
+            top: 110,
+            left: 18,
+            right: 18,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.92),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black38, blurRadius: 8),
+                ],
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline_rounded, color: Colors.white, size: 22),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '預警：系統會在拍攝途中擷取反光點截圖進行分析，僅用於本機判斷，不會外流，請安心使用。',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
           // 👈 新增：晃動警告提示覆蓋層
           if (_showShakeWarning)
             Positioned(
-              top: 120,
+              top: 180,
               left: 20,
               right: 20,
               child: Container(
