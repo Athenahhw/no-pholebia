@@ -230,7 +230,7 @@ class _ScanPageState extends State<ScanPage>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            '請輸入您所在環境',
+                            '請輸入您所在環境（非必填）',
                             style: TextStyle(
                               fontSize: 16,
                               color: Color(0xFF395938),
@@ -397,7 +397,7 @@ class _ScanPageState extends State<ScanPage>
                           icon: 'assets/images/scan.png',
                           label: '一鍵掃描',
                           isSelected: true,
-                          onTap: () => _startScan(context),
+                          onTap: null,
                         ),
                         const SizedBox(width: 61.0),
 
@@ -422,7 +422,7 @@ class _ScanPageState extends State<ScanPage>
                         // 案件地圖
                         _buildNavItem(
                           icon: 'assets/images/map.png',
-                          label: '案件地圖',
+                          label: '使用者地圖',
                           isSelected: false,
                           onTap: () {
                             Navigator.pushReplacement(
