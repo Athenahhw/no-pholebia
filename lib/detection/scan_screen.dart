@@ -66,6 +66,7 @@ class _ScanScreenState extends State<ScanScreen> {
   Timer? _scanBeamTimer;
   StreamSubscription<UserAccelerometerEvent>? _accelSubscription;
   bool _showShakeWarning = false;
+  bool _warningAcknowledged = false;
   double _scanBeamY = 0.0;
 
   // 用來保存背景任務的 Future，方便重置時不中斷它們
@@ -90,11 +91,9 @@ class _ScanScreenState extends State<ScanScreen> {
       _networkFuture = _networkScanner.scan();
       _bluetoothFuture = _bluetoothScanner.scan();
 
-      await _cameraService.startImageStream(_processFrame);
-
-      _startMotionDetection();
-      _startElapsedTimer();
-      _startScanBeamAnimation();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showCaptureWarningDialog();
+      });
     } catch (e) {
       debugPrint("相機初始化失敗: $e");
       if (mounted) {
@@ -106,11 +105,70 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
+  void _showCaptureWarningDialog() {
+    if (!mounted || _warningAcknowledged) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(20, 18, 12, 0),
+          contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          title: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '攝影機預警',
+                  style: TextStyle(
+                    color: Color(0xFF395938),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 20,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  _startScanAfterWarning();
+                },
+                tooltip: '開始掃描',
+                icon: const Icon(Icons.close, color: Color(0xFF395938)),
+              ),
+            ],
+          ),
+          content: const Text(
+            '系統會在拍攝途中截取鏡頭影像作為反光點與異常特徵分析。這些截圖僅用於本機判斷與結果展示，並不會外流，請放心使用。',
+            style: TextStyle(
+              fontSize: 15,
+              height: 1.5,
+              color: Color(0xFF49454F),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _startScanAfterWarning() async {
+    if (_warningAcknowledged) return;
+    _warningAcknowledged = true;
+
+    await _cameraService.startImageStream(_processFrame);
+    _startMotionDetection();
+    _startElapsedTimer();
+    _startScanBeamAnimation();
+  }
+
   /// 顯示倒數 6 秒，倒數結束時自動結束，且結束按鈕仍保留可點擊。
   void _startElapsedTimer() {
     _scanTimer?.cancel();
     _scanTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted || _isProcessing) {
+      if (!mounted || _isProcessing || !_warningAcknowledged) {
         timer.cancel();
         return;
       }
@@ -399,41 +457,6 @@ class _ScanScreenState extends State<ScanScreen> {
                   beamYRatio: _scanBeamY,
                   showShakeWarning: _showShakeWarning,
                 ),
-              ),
-            ),
-          ),
-
-          Positioned(
-            top: 110,
-            left: 18,
-            right: 18,
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
-              decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.92),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
-                boxShadow: const [
-                  BoxShadow(color: Colors.black38, blurRadius: 8),
-                ],
-              ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.info_outline_rounded, color: Colors.white, size: 22),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      '預警：系統會在拍攝途中擷取反光點截圖進行分析，僅用於本機判斷，不會外流，請安心使用。',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        height: 1.35,
-                      ),
-                    ),
-                  ),
-                ],
               ),
             ),
           ),

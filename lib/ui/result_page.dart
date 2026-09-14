@@ -326,6 +326,8 @@ class _ResultPageState extends State<ResultPage> {
     const Color textContentColor = Color(0xFF49454F);
     const double contentWidth = 280.0;
 
+    final bool isPreviewing = _selectedEvidenceImage != null;
+
     return Scaffold(
       body: Stack(
         children: [
@@ -336,291 +338,296 @@ class _ResultPageState extends State<ResultPage> {
             ),
           ),
 
-          if (_selectedEvidenceImage != null)
-            _buildEvidencePreviewOverlay(),
-
-          // 2. 主要內容
-          SafeArea(
-            child: Stack(
-              children: [
-                // 低 / 中風險
-                if (!isHigh)
-                  Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        const Spacer(flex: 2),
-                        SizedBox(
-                          width: contentWidth,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+          // 2. 原本結果頁：在大圖預覽時暫時完全隱藏
+          Opacity(
+            opacity: isPreviewing ? 0.0 : 1.0,
+            child: IgnorePointer(
+              ignoring: isPreviewing,
+              child: SafeArea(
+                child: Stack(
+                  children: [
+                    // 低 / 中風險
+                    if (!isHigh)
+                      Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            const Spacer(flex: 2),
+                            SizedBox(
+                              width: contentWidth,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    titleText,
-                                    style: TextStyle(
-                                      fontSize: 26,
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        titleText,
+                                        style: TextStyle(
+                                          fontSize: 26,
+                                          color: themeColor,
+                                          fontWeight: FontWeight.w900,
+                                          height: 1.0,
+                                        ),
+                                      ),
+                                      Image.asset(
+                                        iconPath,
+                                        width: 20,
+                                        height: 20,
+                                        errorBuilder: (ctx, err, stack) => Icon(
+                                          isLow
+                                              ? Icons.check_circle
+                                              : Icons.warning_amber_rounded,
+                                          color: themeColor,
+                                          size: 20,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    key: _lineKey,
+                                    height: 1.0,
+                                    width: contentWidth,
+                                    color: themeColor,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: contentWidth,
+                              height: 130,
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  CustomPaint(
+                                    size: const Size(220, 110),
+                                    painter: UniformGaugePainter(
+                                      score: _currentScore,
                                       color: themeColor,
-                                      fontWeight: FontWeight.w900,
-                                      height: 1.0,
                                     ),
                                   ),
-                                  Image.asset(
-                                    iconPath,
-                                    width: 20,
-                                    height: 20,
-                                    errorBuilder: (ctx, err, stack) => Icon(
-                                      isLow
-                                          ? Icons.check_circle
-                                          : Icons.warning_amber_rounded,
-                                      color: themeColor,
-                                      size: 20,
+                                  Positioned(
+                                    bottom: 10,
+                                    child: Text(
+                                      '${_formatScore(_currentScore)}%',
+                                      style: TextStyle(
+                                        fontSize: 44,
+                                        color: themeColor,
+                                        fontFamily: 'Jacques Francois',
+                                        fontWeight: FontWeight.w400,
+                                      ),
                                     ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 8),
-                              Container(
-                                key: _lineKey,
-                                height: 1.0,
-                                width: contentWidth,
-                                color: themeColor,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: contentWidth,
-                          height: 130,
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              CustomPaint(
-                                size: const Size(220, 110),
-                                painter: UniformGaugePainter(
-                                  score: _currentScore,
-                                  color: themeColor,
-                                ),
-                              ),
-                              Positioned(
-                                bottom: 10,
-                                child: Text(
-                                  '${_formatScore(_currentScore)}%',
-                                  style: TextStyle(
-                                    fontSize: 44,
-                                    color: themeColor,
-                                    fontFamily: 'Jacques Francois',
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
+                            ),
+                            const SizedBox(height: 12),
 
-                        // 📱 可滑動面板（寬度 280，5% 主題色底色）
-                        _buildSwipeableDetectionCards(
-                          contentWidth,
-                          themeColor,
-                          textContentColor,
-                        ),
+                            // 📱 可滑動面板（寬度 280，5% 主題色底色）
+                            _buildSwipeableDetectionCards(
+                              contentWidth,
+                              themeColor,
+                              textContentColor,
+                            ),
 
-                        const SizedBox(height: 16),
+                            const SizedBox(height: 16),
 
-                        if (_hasGlintEvidence) ...[
-                          SizedBox(
-                            width: contentWidth,
-                            child: _buildGlintEvidenceGallery(textContentColor),
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-
-                        // 下方傳入文字列表
-                        SizedBox(
-                          width: contentWidth,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildListItem(
-                                '綜合評估危險指數：${_formatScore(_currentScore)}%',
-                                false,
-                                textContentColor,
-                              ),
-                              const SizedBox(height: 4),
-                              _buildListItem(
-                                isLow
-                                  ? '您所在環境無隱藏針孔攝影機，請安心使用。'
-                                  : '環境存在潛在風險，請謹慎使用。',
-                                false,
-                                textContentColor,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Spacer(flex: 3),
-                        const SizedBox(height: 80),
-                      ],
-                    ),
-                  ),
-
-                // 高風險 (漸隱 + 滾動)
-                if (isHigh)
-                  ShaderMask(
-                    shaderCallback: (Rect bounds) {
-                      return const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.black,
-                          Colors.black,
-                          Colors.transparent,
-                        ],
-                        stops: [0.0, 0.82, 1.0],
-                      ).createShader(bounds);
-                    },
-                    blendMode: BlendMode.dstIn,
-                    child: Scrollbar(
-                      thumbVisibility: true,
-                      child: SingleChildScrollView(
-                        child: Center(
-                          child: Column(
-                            children: [
-                              const SizedBox(height: 60),
+                            if (_hasGlintEvidence) ...[
                               SizedBox(
                                 width: contentWidth,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          titleText,
-                                          style: TextStyle(
-                                            fontSize: 26,
-                                            color: themeColor,
-                                            fontWeight: FontWeight.w900,
-                                            height: 1.0,
-                                          ),
-                                        ),
-                                        Image.asset(
-                                          iconPath,
-                                          width: 20,
-                                          height: 20,
-                                          errorBuilder: (ctx, err, stack) =>
-                                              Icon(
-                                                Icons.error_outline,
-                                                color: themeColor,
-                                                size: 20,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Container(
-                                      key: _lineKey,
-                                      height: 1.0,
-                                      width: contentWidth,
-                                      color: themeColor,
-                                    ),
-                                  ],
-                                ),
+                                child: _buildGlintEvidenceGallery(textContentColor),
                               ),
                               const SizedBox(height: 16),
-                              SizedBox(
-                                width: contentWidth,
-                                height: 130,
-                                child: Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    CustomPaint(
-                                      size: const Size(220, 110),
-                                      painter: UniformGaugePainter(
-                                        score: _currentScore,
-                                        color: themeColor,
-                                      ),
-                                    ),
-                                    Positioned(
-                                      bottom: 10,
-                                      child: Text(
-                                        '${_formatScore(_currentScore)}%',
-                                        style: TextStyle(
-                                          fontSize: 44,
-                                          color: themeColor,
-                                          fontFamily: 'Jacques Francois',
-                                          fontWeight: FontWeight.w400,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                              SizedBox(
-                                width: contentWidth,
-                                child: _buildHighRiskContent(textContentColor),
-                              ),
-                              const SizedBox(height: 140),
                             ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
 
-                // 返回按鈕
-                Positioned(
-                  bottom: 50,
-                  left: 0,
-                  right: 0,
-                  child: Center(
-                    child: GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Container(
-                        width: 120,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF395938),
-                          borderRadius: BorderRadius.circular(22),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Image.asset(
-                              'assets/images/chevron_backward.png',
-                              width: 20,
-                              height: 20,
-                              errorBuilder: (ctx, err, stack) => const Icon(
-                                Icons.arrow_back_ios_new,
-                                color: Colors.white,
-                                size: 16,
+                            // 下方傳入文字列表
+                            SizedBox(
+                              width: contentWidth,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildListItem(
+                                    '綜合評估危險指數：${_formatScore(_currentScore)}%',
+                                    false,
+                                    textContentColor,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  _buildListItem(
+                                    isLow
+                                      ? '您所在環境無隱藏針孔攝影機，請安心使用。'
+                                      : '環境存在潛在風險，請謹慎使用。',
+                                    false,
+                                    textContentColor,
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(width: 4),
-                            const Text(
-                              '返回',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
+                            const Spacer(flex: 3),
+                            const SizedBox(height: 80),
                           ],
                         ),
                       ),
+
+                    // 高風險 (漸隱 + 滾動)
+                    if (isHigh)
+                      ShaderMask(
+                        shaderCallback: (Rect bounds) {
+                          return const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black,
+                              Colors.black,
+                              Colors.transparent,
+                            ],
+                            stops: [0.0, 0.82, 1.0],
+                          ).createShader(bounds);
+                        },
+                        blendMode: BlendMode.dstIn,
+                        child: Scrollbar(
+                          thumbVisibility: true,
+                          child: SingleChildScrollView(
+                            child: Center(
+                              child: Column(
+                                children: [
+                                  const SizedBox(height: 60),
+                                  SizedBox(
+                                    width: contentWidth,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              titleText,
+                                              style: TextStyle(
+                                                fontSize: 26,
+                                                color: themeColor,
+                                                fontWeight: FontWeight.w900,
+                                                height: 1.0,
+                                              ),
+                                            ),
+                                            Image.asset(
+                                              iconPath,
+                                              width: 20,
+                                              height: 20,
+                                              errorBuilder: (ctx, err, stack) =>
+                                                  Icon(
+                                                    Icons.error_outline,
+                                                    color: themeColor,
+                                                    size: 20,
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Container(
+                                          key: _lineKey,
+                                          height: 1.0,
+                                          width: contentWidth,
+                                          color: themeColor,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  SizedBox(
+                                    width: contentWidth,
+                                    height: 130,
+                                    child: Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        CustomPaint(
+                                          size: const Size(220, 110),
+                                          painter: UniformGaugePainter(
+                                            score: _currentScore,
+                                            color: themeColor,
+                                          ),
+                                        ),
+                                        Positioned(
+                                          bottom: 10,
+                                          child: Text(
+                                            '${_formatScore(_currentScore)}%',
+                                            style: TextStyle(
+                                              fontSize: 44,
+                                              color: themeColor,
+                                              fontFamily: 'Jacques Francois',
+                                              fontWeight: FontWeight.w400,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 20),
+                                  SizedBox(
+                                    width: contentWidth,
+                                    child: _buildHighRiskContent(textContentColor),
+                                  ),
+                                  const SizedBox(height: 140),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                    // 返回按鈕
+                    Positioned(
+                      bottom: 50,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: GestureDetector(
+                          onTap: () => Navigator.pop(context),
+                          child: Container(
+                            width: 120,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF395938),
+                              borderRadius: BorderRadius.circular(22),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Image.asset(
+                                  'assets/images/chevron_backward.png',
+                                  width: 20,
+                                  height: 20,
+                                  errorBuilder: (ctx, err, stack) => const Icon(
+                                    Icons.arrow_back_ios_new,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                const Text(
+                                  '返回',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
+
+          if (isPreviewing) _buildEvidencePreviewOverlay(),
         ],
       ),
     );
@@ -960,30 +967,42 @@ class _ResultPageState extends State<ResultPage> {
   Widget _buildEvidencePreviewOverlay() {
     if (_selectedEvidenceImage == null) return const SizedBox.shrink();
 
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: Container(
-            color: Colors.black.withValues(alpha: 0.8),
-          ),
-        ),
-        Center(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Image.memory(
-                    _selectedEvidenceImage!,
-                    fit: BoxFit.contain,
-                    width: MediaQuery.of(context).size.width * 0.85,
-                    height: MediaQuery.of(context).size.height * 0.7,
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.9),
+        child: SafeArea(
+          child: Column(
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: IconButton(
+                    onPressed: _closeImageViewer,
+                    icon: const Icon(Icons.arrow_back, color: Colors.white, size: 30),
+                    tooltip: '返回結果頁',
                   ),
                 ),
-                const SizedBox(height: 16),
-                ElevatedButton.icon(
+              ),
+              Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Image.memory(
+                        _selectedEvidenceImage!,
+                        fit: BoxFit.contain,
+                        width: MediaQuery.of(context).size.width * 0.9,
+                        height: MediaQuery.of(context).size.height * 0.8,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 28),
+                child: ElevatedButton.icon(
                   onPressed: _closeImageViewer,
                   icon: const Icon(Icons.close),
                   label: const Text('返回結果頁'),
@@ -993,11 +1012,11 @@ class _ResultPageState extends State<ResultPage> {
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 
