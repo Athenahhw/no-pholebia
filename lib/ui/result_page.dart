@@ -79,7 +79,11 @@ class _ResultPageState extends State<ResultPage> {
   // 後門演示模式旗標，不要刪。介面與一般掃描結果共用同一套 layout。
   bool get _isAdminDemoMode => widget.scoreSource == 'backend_admin_override';
 
+  bool get _shouldForceDemoHighRiskSignals =>
+      _isAdminDemoMode && _currentRisk == RiskLevel.high;
+
   bool get _hasGlintEvidence =>
+      _shouldForceDemoHighRiskSignals ||
       (widget.scanSummary?.glintScreenshotsBase64.isNotEmpty ?? false) ||
       (widget.scanSummary?.glints.isNotEmpty ?? false);
 
@@ -680,21 +684,27 @@ class _ResultPageState extends State<ResultPage> {
     bool hasSuspiciousWifi = false;
     bool hasSuspiciousBle = false;
 
-    if (summary != null) {
-      hasGlint = summary.highRiskGlintCount > 0 || summary.glints.isNotEmpty;
-      hasSuspiciousWifi = summary.networkDevices.any((d) => d.looksLikeCamera);
-      hasSuspiciousBle = summary.bluetoothDevices.any((d) => d.suspicious);
-    }
+    if (_shouldForceDemoHighRiskSignals) {
+      hasGlint = true;
+      hasSuspiciousWifi = true;
+      hasSuspiciousBle = true;
+    } else {
+      if (summary != null) {
+        hasGlint = summary.highRiskGlintCount > 0 || summary.glints.isNotEmpty;
+        hasSuspiciousWifi = summary.networkDevices.any((d) => d.looksLikeCamera);
+        hasSuspiciousBle = summary.bluetoothDevices.any((d) => d.suspicious);
+      }
 
-    if (backend != null) {
-      if (backend.containsKey('has_glint')) {
-        hasGlint = backend['has_glint'] == true;
-      }
-      if (backend.containsKey('has_wifi_risk')) {
-        hasSuspiciousWifi = backend['has_wifi_risk'] == true;
-      }
-      if (backend.containsKey('has_ble_risk')) {
-        hasSuspiciousBle = backend['has_ble_risk'] == true;
+      if (backend != null) {
+        if (backend.containsKey('has_glint')) {
+          hasGlint = backend['has_glint'] == true;
+        }
+        if (backend.containsKey('has_wifi_risk')) {
+          hasSuspiciousWifi = backend['has_wifi_risk'] == true;
+        }
+        if (backend.containsKey('has_ble_risk')) {
+          hasSuspiciousBle = backend['has_ble_risk'] == true;
+        }
       }
     }
 
