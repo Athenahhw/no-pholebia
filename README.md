@@ -31,7 +31,7 @@ flutter run --debug --dart-define=AI_ENDPOINT=http://192.168.1.13:8000/api/v1/an
 ### Python 後端
 
 ```bash
-cd /Users/wangxuanhan/Desktop/no pholebia/pinhole_detector/backend
+cd /Users/wangxuanhan/Desktop/no\ pholebia/pinhole_detector/backend
 source .venv/bin/activate
 python main.py
 ```
