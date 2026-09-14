@@ -42,6 +42,7 @@ def generate_safety_plan_with_prompt(
     user_lat: float,
     user_lng: float,
     screenshot_base64: Optional[str] = None,
+    glint_screenshots_base64: Optional[list] = None,
 ) -> dict:
     """
     【針孔掃描 AI 推理】
@@ -55,11 +56,19 @@ def generate_safety_plan_with_prompt(
     1. 有畫面截圖時，以視覺影像為主；無截圖時，依據數據做保守判斷。
     2. 公共場所 Wi-Fi / 藍牙極為常見。無線訊號權重接近 0，不得因為掃到一般熱點或藍牙裝置而提高 risk_percentage。
     3. 只有光學反光（glint）或畫面中可見的可疑鏡頭結構，才能作為上調風險的依據。
+    4. 如果附上了「閃光點特寫截圖」，這些是系統偵測到異常反光、且自動裁切放大的區域特寫，
+       每張圖中央用粉紅色圓圈標記出反光點的確切位置。請仔細檢視每一張特寫圖，
+       如果圖中粉紅圈標記處或周圍出現類似「相機鏡頭」、「方形/長方形盒狀裝置」、
+       「不自然的小洞口」的視覺特徵，這是強烈的針孔攝影機偽裝跡象，請將這點列為
+       risk_assessment_summary 的重點依據，並大幅提高 risk_percentage 評估。
+       如果特寫圖裡只是一般反光物（螺絲、金屬邊角、水漬等），則不要因此提高風險。
 
     你必須 strictly 回傳標準 JSON 格式，包含以下 6 個 Key：
     1. "risk_level": "high" | "medium" | "low"，高風險是30%以上，低風險是15%以下，中風險介於兩者之間，請以低風險為主。
     2. "risk_percentage": 數字 (0 ~ 30)，做最保守的判斷，不要輕易提供高於 25% 的風險機率。
-    3. "risk_assessment_summary": 【風險評估文案】詳細分析為何此環境與物品有此風險，說明反光與無線訊號特徵。
+       但如果閃光點特寫截圖中明確看到相機/方盒/洞口特徵，可以提高到接近或達到30%上限。
+    3. "risk_assessment_summary": 【風險評估文案】詳細分析為何此環境與物品有此風險，
+       如果有閃光點特寫截圖，請明確描述你在圖中看到的具體視覺特徵。
     4. "police_cheat_sheet": 【報案敘述文案】50 字以內，方便使用者直接唸給警察聽。需提及地點與具體物品位置。
     5. "ai_assistant_summary": 【AI 助理查詢結果文案】給使用者的白話解答總結與防護情境說明。
     6. "action_cards": 陣列，包含 3 點具體實體處置建議（例如遮蔽、檢查）。
@@ -74,7 +83,8 @@ def generate_safety_plan_with_prompt(
     - Wi-Fi 串流偵測: {wifi_detected} (同網段 {network_device_count} 個裝置, {suspicious_network_device_count} 個開放可疑 Port)
     - 藍牙掃描: {bluetooth_device_count} 個裝置 ({suspicious_bluetooth_device_count} 個命名可疑)
     - GPS 座標: ({user_lat}, {user_lng})
-    - 畫面截圖: {"已附上，請看圖分析" if screenshot_base64 else "無"}
+    - 整體畫面截圖: {"已附上" if screenshot_base64 else "無"}
+    - 閃光點特寫截圖: {"已附上 " + str(len(glint_screenshots_base64)) + " 張,每張中央粉紅圈標記反光點位置,請逐張仔細檢視" if glint_screenshots_base64 else "無"}
     """
 
     contents = []
@@ -84,7 +94,17 @@ def generate_safety_plan_with_prompt(
             image_bytes = base64.b64decode(clean_b64)
             contents.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
         except Exception as e:
-            print(f"⚠️ 截圖解碼失敗: {e}")
+            print(f"⚠️ 整體截圖解碼失敗: {e}")
+
+    # 新增:把每張閃光點特寫截圖都加進去,讓Gemini逐張檢視
+    if glint_screenshots_base64:
+        for idx, glint_shot in enumerate(glint_screenshots_base64):
+            try:
+                clean_b64 = glint_shot.split(",")[-1] if "," in glint_shot else glint_shot
+                image_bytes = base64.b64decode(clean_b64)
+                contents.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
+            except Exception as e:
+                print(f"⚠️ 第{idx+1}張閃光點截圖解碼失敗: {e}")
 
     contents.append(prompt_content)
 

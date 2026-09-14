@@ -134,6 +134,7 @@ def run_anti_pinhole_inference(payload) -> dict:
             user_lat=user_lat,
             user_lng=user_lng,
             screenshot_base64=screenshot_b64,
+            glint_screenshots_base64=glint_shots,
         )
         llm_risk_percentage = float(llm_result.get("risk_percentage", threat_result["risk_percentage"]))
         final_risk_percentage = min(max(llm_risk_percentage, 0.0), 30.0)
