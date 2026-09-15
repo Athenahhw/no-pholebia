@@ -174,7 +174,7 @@ class _ResultPageState extends State<ResultPage> {
         widget.backendResult?['police_cheat_sheet']?.toString();
     final String demoReportBody =
         '你好，我要報案。\n'
-        '我現在在國立臺北教育大學內，發現疑似遭人安裝針孔攝影機。\n\n'
+        '我現在在公共圖書館內，發現疑似遭人安裝針孔攝影機。\n\n'
         '・ 【具體位置】位於 [請補充實際場館與樓層等地點細節]。\n'
         '・ 【異常物體】門板上的一面常規塑膠掛鉤。\n'
         '・ 【異常細節】該掛鉤外殼雖為一般塑料，但上面的固定螺絲有明顯異常。其中一顆十字螺絲的中心深度與光線吸收率遠高於正常金屬螺絲，且經檢測含有異常訊號。';
