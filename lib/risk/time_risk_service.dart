@@ -40,8 +40,8 @@ class TimeRiskService {
 
   /// 根據分數轉換風險等級標籤
   static String getRiskLevelString(double score) {
-    if (score >= 0.8) return 'HIGH';
-    if (score >= 0.4) return 'MEDIUM';
-    return 'LOW';
+    if (score >= 0.7) return 'HIGH';   // 修正：0.7 ~ 1.0 為高風險
+    if (score >= 0.4) return 'MEDIUM'; // 0.4 ~ 0.6 為中風險
+    return 'LOW';                       // 0.1 ~ 0.3 為低風險
   }
 }
