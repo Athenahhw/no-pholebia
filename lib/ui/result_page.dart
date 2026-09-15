@@ -911,14 +911,8 @@ class _ResultPageState extends State<ResultPage> {
       }
     }
 
-    final demoFallbackBytes = base64Decode(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAF'
-      'c0qVAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJ0UkG'
-      'AAAAAAgAAB4T9XU4AAAAAElFTkSuQmCC',
-    );
-
     final imageList = _shouldForceDemoHighRiskSignals
-        ? [demoFallbackBytes]
+        ? <Uint8List>[]
         : (liveBytes.isNotEmpty
             ? liveBytes
             : List.generate(
@@ -940,61 +934,97 @@ class _ResultPageState extends State<ResultPage> {
         const SizedBox(height: 8),
         SizedBox(
           height: 112,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: imageList.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 8),
-            itemBuilder: (context, index) {
-              final imageBytes = imageList[index];
-              final canUseLiveImage = liveBytes.isNotEmpty || _shouldForceDemoHighRiskSignals;
-              if (canUseLiveImage) {
-                return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _selectedEvidenceImage = imageBytes;
-                    });
+          child: _shouldForceDemoHighRiskSignals
+              ? ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: 1,
+                  separatorBuilder: (_, _) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedEvidenceImage = null;
+                        });
+                      },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.asset(
+                          'assets/images/IMG_2381.jpeg',
+                          width: 112,
+                          height: 112,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              width: 112,
+                              height: 112,
+                              color: const Color(0xFFFF33CC).withOpacity(0.15),
+                              alignment: Alignment.center,
+                              child: const Icon(
+                                Icons.warning_amber_rounded,
+                                size: 40,
+                                color: Color(0xFFFF33CC),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    );
                   },
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.memory(
-                      imageBytes,
-                      width: 112,
-                      height: 112,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                );
-              }
-
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedEvidenceImage = null;
-                  });
-                },
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.asset(
-                    HighRiskStaticAssets.glintCrops[index],
-                    width: 112,
-                    height: 112,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      if (index != 0) return const SizedBox.shrink();
-                      return Container(
-                        width: 220,
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          '尚未截到反光點。之後可把 glint_crop_1.jpg 放到 assets/images/high_risk_static/',
-                          style: TextStyle(fontSize: 13, color: textColor, height: 1.35),
+                )
+              : ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: imageList.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final imageBytes = imageList[index];
+                    if (liveBytes.isNotEmpty) {
+                      return GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _selectedEvidenceImage = imageBytes;
+                          });
+                        },
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.memory(
+                            imageBytes,
+                            width: 112,
+                            height: 112,
+                            fit: BoxFit.cover,
+                          ),
                         ),
                       );
-                    },
-                  ),
+                    }
+
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedEvidenceImage = null;
+                        });
+                      },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.asset(
+                          HighRiskStaticAssets.glintCrops[index],
+                          width: 112,
+                          height: 112,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            if (index != 0) return const SizedBox.shrink();
+                            return Container(
+                              width: 220,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                '尚未截到反光點。之後可把 glint_crop_1.jpg 放到 assets/images/high_risk_static/',
+                                style: TextStyle(fontSize: 13, color: textColor, height: 1.35),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         ),
         if (_selectedEvidenceImage != null)
           Positioned.fill(
