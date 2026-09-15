@@ -1,6 +1,6 @@
 import json
 from tms_engine import calculate_threat_score
-from llm_agent import generate_safety_plan_with_prompt
+from llm_agent import build_fallback_police_cheat_sheet, generate_safety_plan_with_prompt
 import storage
 
 def _summarize_suspicious_item(payload) -> str:
@@ -40,7 +40,10 @@ def run_anti_pinhole_inference(payload) -> dict:
     print("正在接收前端傳入的完整掃描資料...")
 
     # 相容性提取 payload 屬性 (同時支援 snake_case 與 camelCase)
-    env_context = getattr(payload, "environment_context", getattr(payload, "environmentContext", "未提供"))
+    env_context = getattr(payload, "environment_context", getattr(payload, "environmentContext", None))
+    env_context = (env_context or "").strip()
+    if not env_context or "未提供" in env_context:
+        env_context = "目前掃描現場"
     high_risk_glint_count = getattr(payload, "high_risk_glint_count", getattr(payload, "highRiskGlintCount", 0))
     total_glint_count = getattr(payload, "total_glint_count", getattr(payload, "totalGlintCount", 0))
     network_devices = getattr(payload, "network_devices", getattr(payload, "networkDevices", []))
@@ -69,7 +72,7 @@ def run_anti_pinhole_inference(payload) -> dict:
 
     # 修正參數名稱，對齊 tms_engine.py 的定義
     threat_result = calculate_threat_score(
-        environment_context=env_context or "未提供",
+        environment_context=env_context,
         high_risk_glint_count=high_risk_glint_count,
         wifi_camera_detected=wifi_camera_detected,
         bluetooth_suspicious_detected=bluetooth_suspicious_detected,
@@ -93,9 +96,14 @@ def run_anti_pinhole_inference(payload) -> dict:
                 f"初步評估於 {env_context or '未提供'} 的「{suspicious_item_summary}」"
                 f"發現異常光學反光訊號，系統算分機率為 {threat_result['risk_percentage']}%。"
             ),
-            "police_cheat_sheet": (
-                f"報案小抄：我在座標 ({user_lat}, {user_lng}) 的 {env_context or '未提供'}，"
-                f"發現【{suspicious_item_summary}】有疑似針孔裝置，請派員協助處理。"
+            "police_cheat_sheet": build_fallback_police_cheat_sheet(
+                environment_type=env_context,
+                suspicious_item=suspicious_item_summary,
+                glint_count=high_risk_glint_count,
+                suspicious_network_device_count=suspicious_network_device_count,
+                suspicious_bluetooth_device_count=suspicious_bluetooth_device_count,
+                user_lat=user_lat,
+                user_lng=user_lng,
             ),
             "ai_assistant_summary": (
                 f"在 {env_context or '未提供'} 掃描到疑慮物品「{suspicious_item_summary}」，"
@@ -119,7 +127,7 @@ def run_anti_pinhole_inference(payload) -> dict:
     else:
         print("正在調用 Gemini 進行多模態語意推理(含截圖分析)...")
         llm_result = generate_safety_plan_with_prompt(
-            environment_type=env_context or "未提供",
+            environment_type=env_context,
             suspicious_item=suspicious_item_summary,
             aux_risk_percentage=threat_result["risk_percentage"],
             aux_risk_level=threat_result["risk_level"],
@@ -143,6 +151,22 @@ def run_anti_pinhole_inference(payload) -> dict:
     # 提取文案 (優先使用新 Key，並提供 fallback 保底)
     risk_assessment = llm_result.get("risk_assessment_summary") or llm_result.get("plausibility_reasoning", "")
     ai_summary = llm_result.get("ai_assistant_summary", "")
+    police_cheat_sheet = str(llm_result.get("police_cheat_sheet") or "").strip()
+    if (
+        not police_cheat_sheet
+        or "未提供" in police_cheat_sheet
+        or "發現發現" in police_cheat_sheet
+        or "偵測到偵測到" in police_cheat_sheet
+    ):
+        police_cheat_sheet = build_fallback_police_cheat_sheet(
+            environment_type=env_context,
+            suspicious_item=suspicious_item_summary,
+            glint_count=high_risk_glint_count,
+            suspicious_network_device_count=suspicious_network_device_count,
+            suspicious_bluetooth_device_count=suspicious_bluetooth_device_count,
+            user_lat=user_lat,
+            user_lng=user_lng,
+        )
 
     final_risk_level = "high" if final_risk_percentage >= 25.0 else "medium" if final_risk_percentage >= 12.0 else "low"
 
@@ -160,7 +184,7 @@ def run_anti_pinhole_inference(payload) -> dict:
         "ai_reasoning_and_actions": {
             "risk_assessment_summary": risk_assessment,
             "plausibility_reasoning": risk_assessment,  # 提供舊 Key 向下相容
-            "police_cheat_sheet": llm_result.get("police_cheat_sheet", ""),
+            "police_cheat_sheet": police_cheat_sheet,
             "ai_assistant_summary": ai_summary,
             "action_cards": llm_result.get("action_cards", []),
         },

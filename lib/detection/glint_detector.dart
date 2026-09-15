@@ -127,7 +127,8 @@ class GlintTracker {
       double closestDist = double.infinity;
       for (final c in unmatched) {
         final dist = _distance(last, c);
-        if (dist < maxTrackDistance && dist < closestDist) {
+        final maxTrackDistanceSquared = maxTrackDistance * maxTrackDistance;
+        if (dist < maxTrackDistanceSquared && dist < closestDist) {
           closest = c;
           closestDist = dist;
         }

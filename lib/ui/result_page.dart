@@ -47,9 +47,6 @@ class _ResultPageState extends State<ResultPage> {
   final PageController _pageController = PageController();
   int _currentCardIndex = 0;
 
-  // 0 = 初始(生成報案敘述), 1 = 載入中(顯示 Loader 3秒), 2 = 已完成(查看報案敘述)
-  int _reportState = 0;
-
   // 📍 儲存目前抓取到的最近警察局資料
   PoliceStation? _nearestPolice;
   bool _isLoadingPolice = false;
@@ -151,39 +148,49 @@ class _ResultPageState extends State<ResultPage> {
   }
 
   void _handleReportAction() {
-    if (_reportState == 0) {
-      setState(() {
-        _reportState = 1;
-      });
+    _showReportBottomSheet(context);
+  }
 
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted) {
-          setState(() {
-            _reportState = 2;
-          });
-        }
-      });
-    } else if (_reportState == 2) {
-      _showReportBottomSheet(context);
+  String _buildFallbackPoliceReport() {
+    final summary = widget.scanSummary;
+    final suspiciousWifi = _getSuspiciousWifiDetails();
+    final suspiciousBluetooth = _getSuspiciousBluetoothNames();
+    final glintCount = summary?.highRiskGlintCount ?? widget.backendResult?['highRiskGlintCount'] ?? 0;
+    final locationHint = summary?.environmentContext != null && summary!.environmentContext!.trim().isNotEmpty
+      ? summary.environmentContext!
+      : '目前掃描現場';
+
+    final glintText = glintCount > 0
+      ? '偵測到${glintCount}個異常反光點，位置需要進一步確認是否有小孔或鏡頭'
+      : '偵測到異常光學反光，位置需要進一步確認';
+    final wifiText = suspiciousWifi.isNotEmpty ? '，同時偵測到${suspiciousWifi.length}個可疑 Wi‑Fi 裝置' : '';
+    final bluetoothText = suspiciousBluetooth.isNotEmpty ? '，以及${suspiciousBluetooth.length}個可疑藍芽裝置' : '';
+
+    return '我在${locationHint}掃描時，偵測到${glintText}${wifiText}${bluetoothText}。這些影像與感測結果顯示現場可能存在可疑攝影裝置，請員警到場確認，並檢查是否安裝隱藏式針孔攝影機。';
+  }
+
+  String _getReportBody() {
+    final aiSection = widget.backendResult?['ai_reasoning_and_actions'];
+    if (aiSection is Map) {
+      final policeCheatSheet = aiSection['police_cheat_sheet']?.toString() ??
+          aiSection['policeCheatSheet']?.toString();
+      if (policeCheatSheet != null && policeCheatSheet.trim().isNotEmpty) {
+        return policeCheatSheet.trim();
+      }
     }
+
+    final directPoliceCheatSheet =
+        widget.backendResult?['policeCheatSheet']?.toString() ??
+        widget.backendResult?['police_cheat_sheet']?.toString();
+    if (directPoliceCheatSheet != null && directPoliceCheatSheet.trim().isNotEmpty) {
+      return directPoliceCheatSheet.trim();
+    }
+
+    return _buildFallbackPoliceReport();
   }
 
   void _showReportBottomSheet(BuildContext context) {
-    final String? policeCheatSheet =
-        widget.backendResult?['policeCheatSheet']?.toString() ??
-        widget.backendResult?['police_cheat_sheet']?.toString();
-    final String demoReportBody =
-        '你好，我要報案。\n'
-        '我現在在公共圖書館內，發現疑似遭人安裝針孔攝影機。\n\n'
-        '・ 【具體位置】位於 [請補充實際場館與樓層等地點細節]。\n'
-        '・ 【異常物體】門板上的一面常規塑膠掛鉤。\n'
-        '・ 【異常細節】該掛鉤外殼雖為一般塑料，但上面的固定螺絲有明顯異常。其中一顆十字螺絲的中心深度與光線吸收率遠高於正常金屬螺絲，且經檢測含有異常訊號。';
-    final String reportBody =
-        _isAdminDemoMode
-            ? demoReportBody
-            : ((policeCheatSheet != null && policeCheatSheet.trim().isNotEmpty)
-                ? policeCheatSheet.trim()
-                : demoReportBody);
+    final String reportBody = _getReportBody();
 
     showModalBottomSheet(
       context: context,
@@ -306,12 +313,38 @@ class _ResultPageState extends State<ResultPage> {
   String _riskSummaryText() {
     final aiSection = widget.backendResult?['ai_reasoning_and_actions'];
     if (aiSection is Map) {
-      final summary = aiSection['risk_assessment_summary']?.toString();
+      final summary = aiSection['risk_assessment_summary']?.toString() ??
+          aiSection['plausibility_reasoning']?.toString();
       if (summary != null && summary.trim().isNotEmpty) {
-        return '${summary.trim()}\n綜合評估危險指數：${_formatScore(_currentScore)}%\n\n請勿慌張或破壞犯罪現場，使用衛生紙或衣物遮蔽該處即可。';
+        return '${summary.trim()}\n\n請勿慌張或破壞犯罪現場，使用衛生紙或衣物遮蔽該處即可。';
       }
     }
-    return '偵測到非對稱的幾何小黑孔與微光特徵，該掛鉤外殼雖為常規塑料，但其中一顆十字螺絲的中心深度與光線吸收率，遠高於正常金屬螺絲，疑似為「螺絲型微型鏡頭」之偽裝。\n綜合評估危險指數：${_formatScore(_currentScore)}%\n\n請勿慌張或破壞犯罪現場，使用衛生紙或衣物遮蔽該處即可。';
+    return '請依據下方證據與報案敘述資料進行判斷。';
+  }
+
+  List<String> _getSuspiciousWifiDetails() {
+    final summary = widget.scanSummary;
+    if (summary == null) return const [];
+
+    return summary.networkDevices
+        .where((device) => device.looksLikeCamera)
+        .map((device) {
+          final ports = device.openPorts.isNotEmpty
+              ? '（通訊埠: ${device.openPorts.join(", ")}）'
+              : '';
+          return 'Wi‑Fi ${device.ip}$ports';
+        })
+        .toList();
+  }
+
+  List<String> _getSuspiciousBluetoothNames() {
+    final summary = widget.scanSummary;
+    if (summary == null) return const [];
+
+    return summary.bluetoothDevices
+        .where((device) => device.suspicious)
+        .map((device) => device.name.trim().isNotEmpty ? device.name : '未命名藍芽裝置')
+        .toList();
   }
 
   @override
@@ -607,7 +640,11 @@ class _ResultPageState extends State<ResultPage> {
                                   const SizedBox(height: 20),
                                   SizedBox(
                                     width: contentWidth,
-                                    child: _buildHighRiskContent(textContentColor),
+                                    child: _buildHighRiskContent(
+                                      textContentColor,
+                                      themeColor,
+                                      contentWidth,
+                                    ),
                                   ),
                                   const SizedBox(height: 140),
                                 ],
@@ -828,17 +865,31 @@ class _ResultPageState extends State<ResultPage> {
   }
 
   // 高風險詳細內容
-  Widget _buildHighRiskContent(Color textColor) {
+  Widget _buildHighRiskContent(Color textColor, Color themeColor, double contentWidth) {
     final String policeName = _nearestPolice?.name ?? '附近警察單位';
     final String policePhone = _nearestPolice?.phone ?? '110';
     final String policeDistance =
         _nearestPolice?.formattedDistance.isNotEmpty == true
         ? ' (距離 ${_nearestPolice!.formattedDistance})'
         : '';
+    final suspiciousWifi = _getSuspiciousWifiDetails();
+    final suspiciousBluetooth = _getSuspiciousBluetoothNames();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _buildSwipeableDetectionCards(contentWidth, themeColor, textColor),
+        const SizedBox(height: 20),
+        Text(
+          '綜合評估危險指數：${_formatScore(_currentScore)}%',
+          style: TextStyle(
+            fontSize: 16,
+            color: textColor,
+            fontWeight: FontWeight.w700,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 8),
         Text(
           _riskSummaryText(),
           style: TextStyle(fontSize: 16, color: textColor, height: 1.45),
@@ -848,7 +899,39 @@ class _ResultPageState extends State<ResultPage> {
           _buildGlintEvidenceGallery(textColor),
           const SizedBox(height: 20),
         ],
-
+        if (suspiciousWifi.isNotEmpty || suspiciousBluetooth.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            '可疑連線裝置',
+            style: TextStyle(
+              fontSize: 16,
+              color: textColor,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...[
+            for (final device in suspiciousWifi) ...[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '• $device',
+                  style: TextStyle(fontSize: 15, color: textColor, height: 1.4),
+                ),
+              ),
+            ],
+            for (final device in suspiciousBluetooth) ...[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '• 藍芽 $device',
+                  style: TextStyle(fontSize: 15, color: textColor, height: 1.4),
+                ),
+              ),
+            ],
+          ],
+          const SizedBox(height: 20),
+        ],
         Text(
           '附近有 $policeName$policeDistance，您可以考慮報案。\n電話：',
           style: TextStyle(fontSize: 16, color: textColor),
@@ -875,19 +958,13 @@ class _ResultPageState extends State<ResultPage> {
                 color: const Color(0xFF395938),
                 borderRadius: BorderRadius.circular(24),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    _reportState == 2 ? '查看報案敘述' : '生成報案敘述',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
+              child: const Text(
+                '查看報案敘述',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
           ),

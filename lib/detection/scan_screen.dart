@@ -322,7 +322,7 @@ class _ScanScreenState extends State<ScanScreen> {
         : _encodeJpegBase64(_lastFrame!, maxWidth: 480, quality: 55);
 
     final summary = DetectionSessionSummary(
-      environmentContext: widget.environmentContext ?? "未提供",
+      environmentContext: _normaliseEnvironmentContext(widget.environmentContext),
       glints: finalGlints,
       totalGlintCount: finalGlints.length,
       highRiskGlintCount: highRiskGlints,
@@ -350,6 +350,14 @@ class _ScanScreenState extends State<ScanScreen> {
     if (!mounted) return;
 
     widget.onScanComplete(summary, backendResult);
+  }
+
+  String _normaliseEnvironmentContext(String? value) {
+    final context = value?.trim() ?? '';
+    if (context.isEmpty || context.contains('未提供')) {
+      return '目前掃描現場';
+    }
+    return context;
   }
 
   Future<void> _captureGlintCrops(
