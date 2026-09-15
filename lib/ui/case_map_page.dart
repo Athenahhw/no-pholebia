@@ -604,7 +604,7 @@ class _CaseMapPageState extends State<CaseMapPage> {
                 );
               }),
               const SizedBox(width: 61.0),
-              _buildStaticNavItem('assets/images/map.png', '案件地圖', true, null),
+              _buildStaticNavItem('assets/images/map.png', '使用者地圖', true, null),
             ],
           ),
         ),
@@ -649,17 +649,12 @@ class _CaseMapPageState extends State<CaseMapPage> {
             ),
           ),
           const SizedBox(height: 4),
-          SizedBox(
-            width: 72,
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              softWrap: true,
-              style: TextStyle(
-                color: baseGreen,
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
+          Text(
+            label,
+            style: TextStyle(
+              color: baseGreen,
+              fontSize: 12,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
           ),
         ],

@@ -681,7 +681,7 @@ class _AIAssistantPageState extends State<AIAssistantPage> {
               const SizedBox(width: 61.0),
 
               // 👈 3. 案件地圖 (增加點擊跳轉事件)
-              _buildStaticNavItem('assets/images/map.png', '案件地圖', false, () {
+              _buildStaticNavItem('assets/images/map.png', '使用者地圖', false, () {
                 Navigator.pushReplacement(
                   context,
                   PageRouteBuilder(
