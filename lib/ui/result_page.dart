@@ -911,12 +911,20 @@ class _ResultPageState extends State<ResultPage> {
       }
     }
 
-    final imageList = liveBytes.isNotEmpty
-        ? liveBytes
-        : List.generate(
-            HighRiskStaticAssets.glintCrops.length,
-            (index) => Uint8List(0),
-          );
+    final demoFallbackBytes = base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAF'
+      'c0qVAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJ0UkG'
+      'AAAAAAgAAB4T9XU4AAAAAElFTkSuQmCC',
+    );
+
+    final imageList = _shouldForceDemoHighRiskSignals
+        ? [demoFallbackBytes]
+        : (liveBytes.isNotEmpty
+            ? liveBytes
+            : List.generate(
+                HighRiskStaticAssets.glintCrops.length,
+                (index) => Uint8List(0),
+              ));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -938,7 +946,8 @@ class _ResultPageState extends State<ResultPage> {
             separatorBuilder: (_, _) => const SizedBox(width: 8),
             itemBuilder: (context, index) {
               final imageBytes = imageList[index];
-              if (liveBytes.isNotEmpty) {
+              final canUseLiveImage = liveBytes.isNotEmpty || _shouldForceDemoHighRiskSignals;
+              if (canUseLiveImage) {
                 return GestureDetector(
                   onTap: () {
                     setState(() {
