@@ -11,13 +11,17 @@ def _summarize_suspicious_item(payload) -> str:
     """
     bounding_boxes = getattr(payload, "bounding_boxes", getattr(payload, "boundingBoxes", []))
     if not bounding_boxes:
-        return "牆面異常裝置(未偵測到明確候選物件,請直接依畫面判斷)"
+        return "牆面異常裝置"
 
     top_box = max(bounding_boxes, key=lambda b: getattr(b, "confidence", 0))
     object_class = getattr(top_box, "object_class", getattr(top_box, "class_name", "未知物件"))
     confidence = getattr(top_box, "confidence", 0.0)
-    
-    return f"{object_class}(ML Kit初步分類,信心度{confidence:.0%},非最終判斷)"
+
+    cleaned = str(object_class).strip()
+    if not cleaned or cleaned.lower() in {"unknown", "none"}:
+        return "牆面異常裝置"
+
+    return f"{cleaned}（ML Kit 初步分類，信心度 {confidence:.0%}，非最終判斷）"
 
 
 def run_anti_pinhole_inference(payload) -> dict:

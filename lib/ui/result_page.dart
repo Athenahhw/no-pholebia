@@ -166,7 +166,7 @@ class _ResultPageState extends State<ResultPage> {
     final wifiText = suspiciousWifi.isNotEmpty ? '，同時偵測到${suspiciousWifi.length}個可疑 Wi‑Fi 裝置' : '';
     final bluetoothText = suspiciousBluetooth.isNotEmpty ? '，以及${suspiciousBluetooth.length}個可疑藍芽裝置' : '';
 
-    return '我在${locationHint}掃描時，偵測到${glintText}${wifiText}${bluetoothText}。這些影像與感測結果顯示現場可能存在可疑攝影裝置，請員警到場確認，並檢查是否安裝隱藏式針孔攝影機。';
+    return '我在${locationHint}掃描時，${glintText}${wifiText}${bluetoothText}。這些影像與感測結果顯示現場可能存在可疑攝影裝置，請員警到場確認，並檢查是否安裝隱藏式針孔攝影機。';
   }
 
   String _getReportBody() {

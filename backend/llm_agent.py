@@ -26,6 +26,54 @@ client = (
 )
 
 
+def _location_hint_from_gps(user_lat: float, user_lng: float) -> str:
+    if user_lat is None or user_lng is None:
+        return ""
+    if 25.00 <= user_lat <= 25.20 and 121.45 <= user_lng <= 121.70:
+        return "台北市大安區附近"
+    if 22.90 <= user_lat <= 25.40 and 120.00 <= user_lng <= 122.00:
+        return "台灣地區附近"
+    return "GPS 定位附近"
+
+
+def _resolve_report_location(environment_type: str, user_lat: float, user_lng: float) -> tuple[str, bool]:
+    env_value = (environment_type or "").strip()
+    env_value = env_value.replace("未提供", "").strip(" \t\n:：-—[]【】()（）")
+
+    if env_value:
+        if user_lat is not None and user_lng is not None:
+            room_keywords = ("廁所", "更衣室", "洗手間", "試衣間", "浴室", "盥洗室", "休息室")
+            if any(keyword in env_value for keyword in room_keywords):
+                gps_hint = _location_hint_from_gps(user_lat, user_lng)
+                if gps_hint and not any(keyword in env_value for keyword in ("台北市", "新北市", "台中市", "高雄市", "桃園市", "市", "區", "路", "街", "巷", "號")):
+                    return f"{gps_hint}的{env_value}", False
+        return env_value, False
+
+    if user_lat is not None and user_lng is not None:
+        gps_hint = _location_hint_from_gps(user_lat, user_lng)
+        return gps_hint or "GPS 定位附近", False
+
+    return "請自行說明所在位置", True
+
+
+def _normalize_report_object(suspicious_item: str) -> str:
+    object_desc = (suspicious_item or "").strip()
+    if not object_desc:
+        return "可疑區域"
+
+    object_desc = object_desc.replace("未偵測到明確候選物件", "")
+    object_desc = object_desc.replace("請直接依畫面判斷", "")
+    object_desc = object_desc.replace("ML Kit 初步分類，信心度", "")
+    object_desc = object_desc.replace("ML Kit初步分類,信心度", "")
+    object_desc = object_desc.replace("發現", "").strip(" \t\n:：-—()（）")
+    object_desc = object_desc.split("(", 1)[0].strip()
+    object_desc = object_desc.split("（", 1)[0].strip()
+
+    if not object_desc:
+        return "可疑區域"
+    return object_desc
+
+
 def build_fallback_police_cheat_sheet(
     environment_type: str,
     suspicious_item: str,
@@ -35,32 +83,35 @@ def build_fallback_police_cheat_sheet(
     user_lat: float,
     user_lng: float,
 ) -> str:
-    """當 Gemini 不可用時，依據偵測數據組出具體且可直接唸給警方的報案敘述。"""
-    location = (environment_type or "").strip() or "目前掃描現場"
-    object_desc = (suspicious_item or "").strip() or "畫面中的可疑位置"
-    if object_desc.startswith("發現"):
-        object_desc = object_desc[2:].lstrip(" ：:，,")
+    """當 Gemini 不可用時，依據偵測數據組出簡短、口語化的報案敘述。"""
+    location, needs_manual_location = _resolve_report_location(environment_type, user_lat, user_lng)
+    object_desc = _normalize_report_object(suspicious_item)
 
-    glint_part = (
-        f"偵測到{glint_count}個異常反光點，位置需要進一步確認是否有小孔或鏡頭"
-        if glint_count > 0
-        else "偵測到異常光學反光，位置需要進一步確認"
-    )
+    if glint_count > 0:
+        glint_part = f"發現 {glint_count} 個異常反光點，牆面有小孔或鏡頭狀構造"
+    else:
+        glint_part = "發現異常反光，位置需要再確認"
+
     wifi_part = (
-        f"，同時偵測到{suspicious_network_device_count}個可疑 Wi‑Fi 裝置"
+        f"，同時有 {suspicious_network_device_count} 個可疑 Wi‑Fi 裝置"
         if suspicious_network_device_count > 0
         else ""
     )
     bluetooth_part = (
-        f"，以及{suspicious_bluetooth_device_count}個可疑藍芽裝置"
+        f"，也有 {suspicious_bluetooth_device_count} 個可疑藍芽裝置"
         if suspicious_bluetooth_device_count > 0
         else ""
     )
 
+    if needs_manual_location:
+        return (
+            f"我在{location}，{glint_part}{wifi_part}{bluetooth_part}。"
+            f"這裡看起來像有隱藏式攝影裝置，請使用者說明實際所在位置，警方協助確認。"
+        )
+
     return (
-        f"我在{location}掃描時，於{object_desc}附近{glint_part}{wifi_part}{bluetooth_part}。"
-        f"這些影像與感測結果顯示該處可能存在可疑攝影裝置，請員警到場確認，"
-        f"並檢查是否安裝隱藏式針孔攝影機。"
+        f"我在{location}，{glint_part}{wifi_part}{bluetooth_part}。"
+        f"這裡疑似有隱藏式攝影裝置，請警方協助確認{object_desc}附近是否有鏡頭。"
     )
 
 
@@ -107,9 +158,10 @@ def generate_safety_plan_with_prompt(
        但如果閃光點特寫截圖中明確看到相機/方盒/洞口特徵，可以提高到接近或達到30%上限。
     3. "risk_assessment_summary": 【風險評估文案】詳細分析為何此環境與物品有此風險，
        如果有閃光點特寫截圖，請明確描述你在圖中看到的具體視覺特徵。
-    4. "police_cheat_sheet": 【報案敘述文案】請寫成 1~2 句可直接唸給警察的重點報案內容，長度約 80~140 字，
-       必須明確提及：地點（例如環境/樓層/區域）、物品位置（例如牆面/門板/掛勾/插座）、異常特徵（例如反光、黑孔、鏡頭外殼、異常螺絲）
-       以及請警察協助檢查是否安裝隱藏式攝影裝置。嚴禁寫成泛泛的「疑似針孔設備」一句話。
+    4. "police_cheat_sheet": 【報案敘述文案】請寫成 1~2 句很短、很口語的重點報案內容，長度約 60~110 字，
+       必須明確提及：地點（例如台北市大安區附近的更衣室；若無法確定建築類型，就用「請自行說明所在位置」提醒使用者補充）、
+       物品位置（例如牆面/門板/掛勾/插座）、異常特徵（例如反光、黑孔、鏡頭外殼、異常螺絲）
+       以及請警察協助檢查是否安裝隱藏式攝影裝置。務必口語自然，不要寫成機器摘要，也不要重複說「偵測到偵測到」。
     5. "ai_assistant_summary": 【AI 助理查詢結果文案】給使用者的白話解答總結與防護情境說明。
     6. "action_cards": 陣列，包含 3 點具體實體處置建議（例如遮蔽、檢查）。
     """
@@ -129,11 +181,12 @@ def generate_safety_plan_with_prompt(
     【報案敘述生成要求】
     請特別重視 police_cheat_sheet，這段應該像現場報警口語，不是機器摘要。
     必須包含：
-    - 地點/場所/樓層/區域
+    - 地點/場所/樓層/區域；如果無法確定建築類型，請使用「請自行說明所在位置」並提醒使用者補充實際地點
     - 物品位置（牆面、門板、掛勾、插座、頂角、窗邊等）
     - 可疑異常（黑洞、反光、異常螺絲、方形外殼、鏡頭狀構造）
     - 請警方協助檢查是否有隱藏式攝影裝置
-    - 可直接唸給警察聽的口語連貫表述
+    - 口語、簡短、可直接唸給警察聽的連貫表述
+    - 絕對不要在文案中重複連續出現「偵測到偵測到」
     """
 
     contents = []
